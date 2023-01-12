@@ -1,0 +1,2 @@
+add_subdirectory(WireframePass)
+add_subdirectory(TinyPathTracer)
