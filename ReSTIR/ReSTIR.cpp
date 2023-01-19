@@ -46,13 +46,13 @@ namespace {
     const uint32_t kMaxRecursionDepth = 2u;
     const char kShaderFile[] = "RenderPasses/ReSTIR/ReSTIR.rt.slang";
     const char kInputViewDir[] = "viewW";
-    const ChannelList kInputChannnels = {
+    const ChannelList kInputChannels = {
             {"vBuffer",    "gVBuffer", ""},
             {"motionVecW", "gMVec",    "world-space motion vector"},
             {"viewW",      "gViewW",   "world-space view vector", true},
     };
     const ChannelList kOutputChannels = {
-            {"color", "gOutputColor", "", false, ResourceFormat::RGBA32Float}
+            {"color", "gOutColor", "", false, ResourceFormat::RGBA32Float}
     };
 
     const char kRISSampleNums[] = "risSampleNums";
@@ -99,7 +99,7 @@ Dictionary ReSTIR::getScriptingDictionary() {
 RenderPassReflection ReSTIR::reflect(const CompileData &compileData) {
     // Define the required resources here
     RenderPassReflection reflector;
-    addRenderPassInputs(reflector, kInputChannnels);
+    addRenderPassInputs(reflector, kInputChannels);
     addRenderPassOutputs(reflector, kOutputChannels);
     return reflector;
 }
@@ -114,7 +114,7 @@ void ReSTIR::execute(RenderContext *pRenderContext, const RenderData &renderData
         mOptionsChanged = false;
     }
     if (!mpScene) {
-        for (const auto cd: kOutputChannels) {
+        for (const auto &cd: kOutputChannels) {
             Texture *pDst = renderData.getTexture(cd.name).get();
             if (pDst) {
                 pRenderContext->clearTexture(pDst, float4(0, 0, 0, 0));
@@ -137,32 +137,29 @@ void ReSTIR::execute(RenderContext *pRenderContext, const RenderData &renderData
     }
 
     mRtState.pProgram->addDefine("RIS_SAMPLE_NUMS", std::to_string(mRISSampleNums));
-    mRtState.pProgram->addDefine("USE_RESTIR", std::to_string(mUseReSTIR));
-    mRtState.pProgram->addDefine("USE_TEMPORAL_REUSE", std::to_string(mUseTemporalReuse));
-    mRtState.pProgram->addDefine("USE_SPATIAL_REUSE", std::to_string(mUseSpatialReuse));
+    mRtState.pProgram->addDefine("USE_RESTIR", mUseReSTIR ? "1" : "0");
+//    mRtState.pProgram->addDefine("USE_TEMPORAL_REUSE", mUseTemporalReuse ? "1" : "0");
+//    mRtState.pProgram->addDefine("USE_SPATIAL_REUSE", mUseSpatialReuse ? "1" : "0");
 
-    mRtState.pProgram->addDefines(getValidResourceDefines(kInputChannnels, renderData));
+    mRtState.pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
     mRtState.pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
 
     if (!mRtState.pVars)prepareVars();
+    FALCOR_ASSERT(mRtState.pVars);
 
     auto var = mRtState.pVars->getRootVar();
     var["PerFrameCB"]["gFrameCount"] = mFrameCount;
     var["PerFrameCB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension]
                                                                                    : 0u;
-    auto bind = [&](const ChannelDesc &desc) {
-        if (!desc.texname.empty()) {
-            var[desc.texname] = renderData.getTexture(desc.name);
-        }
-    };
-    for (auto channel: kInputChannnels) {
-        bind(channel);
-    }
-    for (auto channel: kOutputChannels) {
-        bind(channel);
-    }
 
-    const uint2 targetDim = renderData.getDefaultTextureDims();
+    for (const auto &channel: kInputChannels)
+        if (!channel.texname.empty())
+            var[channel.texname] = renderData.getTexture(channel.name);
+    for (const auto &channel: kOutputChannels)
+        if (!channel.texname.empty())
+            var[channel.texname] = renderData.getTexture(channel.name);
+
+    const uint2 &targetDim = renderData.getDefaultTextureDims();
     FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
     mpScene->raytrace(pRenderContext, mRtState.pProgram.get(), mRtState.pVars, uint3(targetDim, 1));
     mFrameCount++;
@@ -182,6 +179,9 @@ void ReSTIR::prepareVars() {
 
 void ReSTIR::setScene(RenderContext *pRenderContext, const Scene::SharedPtr &pScene) {
     mpScene = pScene;
+    mRtState.pProgram = nullptr;
+    mRtState.pVars = nullptr;
+    mRtState.pBindingTable = nullptr;
     mFrameCount = 0;
     if (!mpScene)return;
     if (mpScene->hasGeometryType(Scene::GeometryType::Custom))

@@ -26,8 +26,8 @@ RWTexture2D<float4> gOutColor;
 #define is_valid(name) (is_valid_##name != 0)
 static const uint kRISSampleNums = RIS_SAMPLE_NUMS;
 static const bool kUseReSTIR = USE_RESTIR;
-static const bool kUseTemporalReuse = USE_TEMPORAL_REUSE;
-static const bool kUseSpatialReuse = USE_SPATIAL_REUSE;
+// static const bool kUseTemporalReuse = USE_TEMPORAL_REUSE;
+// static const bool kUseSpatialReuse = USE_SPATIAL_REUSE;
 
 struct ShadowRayData
 {
@@ -192,8 +192,8 @@ float3 tracePath(uint2 pixel, uint2 screen)
 
         ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
         let bsdf = gScene.materials.getBSDF(sd, lod);
-        let sg = SampleGenerator(pixel, gFrameCount);
-        for (uint i = 0; i < gPRNGDimention; i++)
+        SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
+        for (uint i = 0; i < gPRNGDimension; i++)
             sampleNext1D(sg);
         float3 rayOrigin = sd.computeNewRayOrigin();
 
@@ -227,6 +227,6 @@ void rayGen()
 {
     uint2 pixel = DispatchRaysIndex().xy;
     uint2 frameDim = DispatchRaysDimensions().xy;
-    float3 color = tracePath(pixel, frameDim);
+    float3 color = float3(0.f); // tracePath(pixel, frameDim);
     gOutColor[pixel] = float4(color, 1.0f);
 }

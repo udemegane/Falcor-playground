@@ -73,7 +73,7 @@ private:
     SampleGenerator::SharedPtr mpSampleGenerator;
 
     uint mRISSampleNums = 8;
-    bool mUseReSTIR = true;
+    bool mUseReSTIR = false;
     bool mUseTemporalReuse = true;
     bool mUseSpatialReuse = true;
     Buffer::SharedPtr mpOutputReservoir;
