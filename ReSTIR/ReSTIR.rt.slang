@@ -11,10 +11,10 @@ import Utils.Sampling.SampleGenerator;
 import Rendering.Lights.LightHelpers;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
 
-cbuffer CB
+cbuffer PerFrameCB
 {
     uint gFrameCount;
-    uint gPRNGDimention;
+    uint gPRNGDimension;
 }
 
 Texture2D<PackedHitInfo> gVBuffer;
@@ -24,10 +24,10 @@ Texture2D<float4> gMVec;
 RWTexture2D<float4> gOutColor;
 
 #define is_valid(name) (is_valid_##name != 0)
-static const uint kRISSampleNums;
-static const bool kUseReSTIR;
-static const bool kUseTemporalReuse;
-static const bool kUseSpatialReuse;
+static const uint kRISSampleNums = RIS_SAMPLE_NUMS;
+static const bool kUseReSTIR = USE_RESTIR;
+static const bool kUseTemporalReuse = USE_TEMPORAL_REUSE;
+static const bool kUseSpatialReuse = USE_SPATIAL_REUSE;
 
 struct ShadowRayData
 {
