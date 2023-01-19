@@ -56,7 +56,7 @@ public:
 
     virtual void renderUI(Gui::Widgets &widget) override;
 
-    virtual void setScene(RenderContext *pRenderContext, const Scene::SharedPtr &pScene) override {}
+    virtual void setScene(RenderContext *pRenderContext, const Scene::SharedPtr &pScene) override;
 
     virtual bool onMouseEvent(const MouseEvent &mouseEvent) override { return false; }
 
@@ -72,15 +72,19 @@ private:
     Scene::SharedPtr mpScene;
     SampleGenerator::SharedPtr mpSampleGenerator;
 
-    uint mRISSampleNums;
-    bool mUseTemporalReuse;
-    bool mUseSpatialReuse;
+    uint mRISSampleNums = 8;
+    bool mUseReSTIR = true;
+    bool mUseTemporalReuse = true;
+    bool mUseSpatialReuse = true;
     Buffer::SharedPtr mpOutputReservoir;
 
+    uint mFrameCount = 0;
+    bool mOptionsChanged = false;
+
     struct {
-        RtProgram::SharedPtr pProgram;
-        RtProgramVars::SharedPtr pVars;
-        RtBindingTable::SharedPtr pBindingTable;
-    };
+        RtProgram::SharedPtr pProgram = nullptr;
+        RtProgramVars::SharedPtr pVars = nullptr;
+        RtBindingTable::SharedPtr pBindingTable = nullptr;
+    } mRtState;
 
 };
