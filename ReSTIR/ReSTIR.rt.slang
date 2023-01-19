@@ -37,32 +37,34 @@ struct ShadowRayData
 struct RISReservoir<S>
 {
     float wSum;
-    S x;
-    uint M;
+    S currentSample;
     float3 pTarget;
-
-    __init()
+    uint M;
+    __init(S sample)
     {
-        this.wSum = 0;
-        this.pTarget = float3(0.f);
-        this.M = 0;
+        wSum = 0;
+        M = 0;
+        currentSample = sample;
+        pTarget = float3(0.f);
     }
-}
-
-void UpdateReservoir<S>(inout RISReservoir<S> r, S xi, float wi, float3 pi, float rand)
-{
-    r.wSum += wi;
-    r.M++;
-    if (wi / r.wSum > rand)
+    [mutating]
+    bool update(S xi, float wi, float3 pi, float rand)
     {
-        r.x = xi;
-        r.pTarget = pi;
+        wSum += wi;
+        M++;
+        bool accept = rand < wi / wSum;
+        if (accept)
+        {
+            currentSample = xi;
+            pTarget = pi;
+        }
+        return accept;
     }
-};
 
-float3 calcReserviorWeight<S>(in RISReservoir<S> r)
-{
-    return r.wSum / (r.pTarget * r.M);
+    float3 calcInvPdf()
+    {
+        return wSum / (M * pTarget);
+    }
 }
 
 // RISReservoir<S> combineReservoirs<S>(RISReservoir<S>[] rs, ) {
@@ -132,7 +134,7 @@ float3 evalDirectAnalytic(const ShadingData sd, const IBSDF bsdf, ISampleGenerat
     if (lightCount == 0)
         return float3(0.f);
     uint lightIndex = 0;
-    float invPdf = 0;
+    float3 invPdf = float3(0.f);
     if (!kUseReSTIR)
     {
         lightIndex = min(uint(sampleNext1D(sg) * lightCount), lightCount - 1);
@@ -140,18 +142,24 @@ float3 evalDirectAnalytic(const ShadingData sd, const IBSDF bsdf, ISampleGenerat
     }
     else
     {
-        RISReservoir<uint> r = RISReservoir<uint>();
+        RISReservoir<uint> r = RISReservoir<uint>(lightIndex);
         for (uint i = 0; i < kRISSampleNums; i++)
         {
-            const uint xi = min(uint(sampleNext1D(sg) * lightCount), lightCount - 1);
+            // Sample LightID from uniform distribution
+            float rand = sampleNext1D(sg);
+            const uint xi = min(uint(rand * lightCount), lightCount - 1);
             AnalyticLightSample ls;
-            if (!sampleLight(sd.posW, gScene.getLight(lightIndex), sg, ls))
-                r.pTarget = float3(0.f);
-            else
-                r.pTarget = bsdf.eval(sd, ls.dir, sg) * ls.Li * lightCount;
-            // float wi = r.pTarget
-            // TODO
+            // Calculate from target distribution Fs*G*invPdf
+            float3 pi = float3(0.f);
+            if (sampleLight(sd.posW, gScene.getLight(lightIndex), sg, ls))
+                pi = bsdf.eval(sd, ls.dir, sg) * ls.Li * lightCount; // lightCount means invPdf
+            // Calculate weight proportional to p(xi)/q(xi). q() is uniform distribution,
+            // So simply choose Brightness of p(xi) as weight.
+            float wi = max(max(pi.x, pi.y), pi.z); // * lightCount
+            r.update(xi, wi, pi, rand);
         }
+        lightIndex = r.currentSample;
+        invPdf = r.calcInvPdf();
     }
     AnalyticLightSample ls;
     if (!sampleLight(sd.posW, gScene.getLight(lightIndex), sg, ls))
