@@ -26,12 +26,14 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #pragma once
+
+#include <vector>
 #include "Falcor.h"
+#include "Utils/Sampling/SampleGenerator.h"
 
 using namespace Falcor;
 
-class ReSTIR : public RenderPass
-{
+class ReSTIR : public RenderPass {
 public:
     using SharedPtr = std::shared_ptr<ReSTIR>;
 
@@ -42,17 +44,43 @@ public:
         \param[in] dict Dictionary of serialized parameters.
         \return A new object, or an exception is thrown if creation failed.
     */
-    static SharedPtr create(RenderContext* pRenderContext = nullptr, const Dictionary& dict = {});
+    static SharedPtr create(RenderContext *pRenderContext = nullptr, const Dictionary &dict = {});
 
     virtual Dictionary getScriptingDictionary() override;
-    virtual RenderPassReflection reflect(const CompileData& compileData) override;
-    virtual void compile(RenderContext* pRenderContext, const CompileData& compileData) override {}
-    virtual void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
-    virtual void renderUI(Gui::Widgets& widget) override;
-    virtual void setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene) override {}
-    virtual bool onMouseEvent(const MouseEvent& mouseEvent) override { return false; }
-    virtual bool onKeyEvent(const KeyboardEvent& keyEvent) override { return false; }
+
+    virtual RenderPassReflection reflect(const CompileData &compileData) override;
+
+    virtual void compile(RenderContext *pRenderContext, const CompileData &compileData) override {}
+
+    virtual void execute(RenderContext *pRenderContext, const RenderData &renderData) override;
+
+    virtual void renderUI(Gui::Widgets &widget) override;
+
+    virtual void setScene(RenderContext *pRenderContext, const Scene::SharedPtr &pScene) override {}
+
+    virtual bool onMouseEvent(const MouseEvent &mouseEvent) override { return false; }
+
+    virtual bool onKeyEvent(const KeyboardEvent &keyEvent) override { return false; }
 
 private:
-    ReSTIR() : RenderPass(kInfo) {}
+    ReSTIR(const Dictionary &dict);
+
+    void parseDictionary(const Dictionary &dict);
+
+    void prepareVars();
+
+    Scene::SharedPtr mpScene;
+    SampleGenerator::SharedPtr mpSampleGenerator;
+
+    uint mRISSampleNums;
+    bool mUseTemporalReuse;
+    bool mUseSpatialReuse;
+    Buffer::SharedPtr mpOutputReservoir;
+
+    struct {
+        RtProgram::SharedPtr pProgram;
+        RtProgramVars::SharedPtr pVars;
+        RtBindingTable::SharedPtr pBindingTable;
+    };
+
 };
