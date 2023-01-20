@@ -42,14 +42,13 @@ struct ShadowRayData
     bool visible;
 }
 
-struct RISReservoir
+struct RISReservoir<S>
 {
     float wSum;
-    uint currentSample;
-    // float3 pTarget;
+    S currentSample;
     float targetPdfSample;
     uint M;
-    __init(uint sample)
+    __init(S sample)
     {
         wSum = 0;
         M = 0;
@@ -58,13 +57,12 @@ struct RISReservoir
         targetPdfSample = 0.f;
     }
     [mutating]
-    bool update(uint xi, float wi, float pi, float rand)
+    bool update(S xi, float wi, float pi, float rand)
     {
         wSum += wi;
         // M += (uint)step(pi, 0.00001);
-        if (pi > 0.f)
-            M++;
-        bool accept = rand < wi / wSum;
+        M++;
+        bool accept = rand <= wi / wSum;
         if (accept)
         {
             currentSample = xi;
@@ -166,24 +164,26 @@ float3 evalDirectAnalytic(const ShadingData sd, const IBSDF bsdf, SampleGenerato
     float3 invPdf = float3(0.f);
     if (kUseReSTIR)
     {
-        RISReservoir r = RISReservoir(lightIndex);
+        RISReservoir<uint> r = RISReservoir<uint>(lightIndex);
         for (uint i = 0; i < kRISSampleNums; i++)
         {
+            float2 rand = sampleNext2D(sg);
             // Sample LightID from uniform distribution
-            const uint xi = min(uint(sampleNext1D(sg) * lightCount), lightCount - 1);
+            const uint xi = min(uint(rand.x * lightCount), lightCount - 1);
 
             AnalyticLightSample ls;
-            // Calculate from target distribution Fs*G*invPdf
+            // Calculate from target distribution Fs*G*Li
             float3 pi3f = float3(0.f);
             if (sampleLight(sd.posW, gScene.getLight(xi), sg, ls))
                 pi3f = bsdf.eval(sd, ls.dir, sg) * ls.Li;
 
-            // Calculate weight proportional to p(xi)/q(xi). q() is uniform distribution,
-            // So simply choose Brightness of p(xi) as weight.
-            float pi = max(max(pi3f.x, pi3f.y), pi3f.z);
+            // Calculate weight proportional to p(xi)/q(xi).
+            // q() is uniform distribution, Always Return 1/LightCount.
+            // p(xi) is Fs*G*Li. (exclude V())
+            // So weight us pi * lightCount.
+            float pi = length(pi3f);
             float wi = pi * lightCount; // lightCount means invPdf
-            // float3 wi = pi; // * lightCount
-            r.update(xi, wi, pi, sampleNext1D(sg));
+            r.update(xi, wi, pi, rand.y);
         }
         lightIndex = r.currentSample;
         invPdf = r.getInvPDF();
