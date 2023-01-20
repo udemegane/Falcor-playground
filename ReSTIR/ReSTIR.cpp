@@ -224,7 +224,7 @@ void ReSTIR::setScene(RenderContext *pRenderContext, const Scene::SharedPtr &pSc
 void ReSTIR::renderUI(Gui::Widgets &widget) {
     bool dirty = false;
     dirty |= widget.var("M (Importance Resampling Count)", mRISSampleNums, 1u, 100u);
-    dirty |= widget.checkbox("Use ReSTIR", mUseReSTIR);
+    dirty |= widget.checkbox("Use WRS", mUseReSTIR);
     dirty |= widget.checkbox("Use Temporal Reuse", mUseTemporalReuse);
     dirty |= widget.checkbox("Use Spatial Reuse", mUseSpatialReuse);
     // If rendering options that modify the output have changed, set flag to indicate that.
