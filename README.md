@@ -26,10 +26,18 @@ I use [Nvidia Falcor](https://github.com/NVIDIAGameWorks/Falcor) for the framewo
 
 ---
 # My Environment/環境
-- Windows 11 build 22621
-- NVIDIA Driver 517.0
-- Visual Studio Community 2022 17.4.4 (for MSVC)
-- CLion & VSCode (for slang shader)
-- Ryzen9 3900X / RTX2080
-- Falcor 5.2
+- Env1
+  - Windows 11 build 22621
+  - NVIDIA Driver 517.0
+  - Visual Studio Community 2022 17.4.4 (for MSVC)
+  - CLion & VSCode (for slang shader)
+  - Ryzen9 3900X / RTX2080
+  - Falcor 5.2
+- Env2
+  - Windows 10 build 19044
+  - NVIDIA Driver 511.69
+  - Visual Studio Community 2022 17.4.3 (for MSVC)
+  - CLion & VSCode (for slang shader)
+  - i9-9980HK / RTX2060
+  - Falcor 5.2
 
