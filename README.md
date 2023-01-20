@@ -9,6 +9,17 @@ A repository for the study of Real-time rendering and Computer graphics theory.
 I use [Nvidia Falcor](https://github.com/NVIDIAGameWorks/Falcor) for the framework and I implement the custom render pass.
 
 ---
+### ReSTIR
+![](Images/2023-01-20-22-41-00.png)
+
+低分散なレイトレーシング手法である[ReSTIR](https://research.nvidia.com/publication/2020-07_spatiotemporal-reservoir-resampling-real-time-ray-tracing-dynamic-direct)の再現実装です。
+[詳細はこちら](https://blog-56fdvahko-udemegane.vercel.app/p/restir%E3%82%92%E5%AE%9F%E8%A3%85%E3%81%99%E3%82%8B-%E3%81%9D%E3%81%AE1/)
+- [x] WRS
+- [ ] Temporal Reuse
+- [ ] Spatial Reuse
+
+
+---
 ### Simple GPU PathTracer
 ![](Images/2023-01-13-03-29-30.png)
 [詳細はこちら](https://blog.udemegane.net/p/falcor%E3%81%A7gpu%E3%83%91%E3%82%B9%E3%83%88%E3%83%AC%E3%83%BC%E3%82%B5%E3%83%BC%E3%81%AE%E5%AE%9F%E8%A3%85/)
