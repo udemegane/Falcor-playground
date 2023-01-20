@@ -17,31 +17,6 @@ cbuffer PerFrameCB
     uint gPRNGDimension;
 }
 
-// Inputs
-Texture2D<PackedHitInfo> gVBuffer;
-Texture2D<float4> gViewW;
-Texture2D<float4> gMVec;
-RWTexture2D<float4> gOutputColor;
-
-#define is_valid(name) (is_valid_##name != 0)
-static const bool kUseAnalyticLights = true;
-static const bool kUseEmissiveLights = true;
-static const bool kUseEnvLight = true;
-static const bool kUseEnvBackground = true;
-static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
-static const float kRayMax = FLT_MAX;
-
-static const uint kRISSampleNums = RIS_SAMPLE_NUMS;
-static const bool kUseReSTIR = USE_RESTIR;
-static const bool kUseTemporalReuse = USE_TEMPORAL_REUSE;
-static const bool kUseSpatialReuse = USE_SPATIAL_REUSE;
-
-// shadow ray strcuture
-struct ShadowRayData
-{
-    bool visible;
-}
-
 struct RISReservoir<S>
 {
     float wSum;
@@ -77,6 +52,47 @@ struct RISReservoir<S>
         return wSum / (M * targetPdfSample);
     }
 }
+
+// Inputs
+Texture2D<PackedHitInfo> gVBuffer;
+Texture2D<float4> gViewW;
+Texture2D<float4> gMVec;
+
+RWStructuredBuffer<RISReservoir<uint>> prevFrameReservoir;
+
+// Output
+RWTexture2D<float4> gOutputColor;
+
+#define is_valid(name) (is_valid_##name != 0)
+
+static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
+static const float kRayMax = FLT_MAX;
+
+// ReSTIR constant values
+static const bool kUseReSTIR = USE_RESTIR;
+static const uint kRISSampleNums = RIS_SAMPLE_NUMS;
+
+static const bool kUseTemporalReuse = USE_TEMPORAL_REUSE;
+
+static const bool kUseSpatialReuse = USE_SPATIAL_REUSE;
+static const uint kSpatialNeigborsNum = 5;
+static const float kSampleRadius = 30.0;
+
+// shadow ray strcuture
+struct ShadowRayData
+{
+    bool visible;
+}
+
+// RISReservoir<S> combineReservoir<S>(RISReservoir<S>[] resArr, uint N, SampleGenerator sg)
+// {
+//     RISReservoir<S> res;
+//     for (uint i = 0; i < N; i++)
+//     {
+//         res.update(resArr[i].currentSample, resArr[i].wSum, sampleNext1D(sg));
+//     }
+//     return res;
+// }
 
 float3 getPrimaryRayDir(uint2 pixel, uint2 screen, const Camera camera)
 {
@@ -155,7 +171,7 @@ bool traceShadowRay(float3 origin, float3 dir, float distance)
     return rayData.visible;
 }
 
-float3 evalDirectAnalytic(const ShadingData sd, const IBSDF bsdf, SampleGenerator sg)
+float3 evalDirectAnalytic(const uint2 pixel, const ShadingData sd, const IBSDF bsdf, SampleGenerator sg)
 {
     const uint lightCount = gScene.getLightCount();
     if (lightCount == 0)
@@ -164,6 +180,7 @@ float3 evalDirectAnalytic(const ShadingData sd, const IBSDF bsdf, SampleGenerato
     float3 invPdf = float3(0.f);
     if (kUseReSTIR)
     {
+
         RISReservoir<uint> r = RISReservoir<uint>(lightIndex);
         for (uint i = 0; i < kRISSampleNums; i++)
         {
@@ -184,6 +201,23 @@ float3 evalDirectAnalytic(const ShadingData sd, const IBSDF bsdf, SampleGenerato
             float pi = length(pi3f);
             float wi = pi * lightCount; // lightCount means invPdf
             r.update(xi, wi, pi, rand.y);
+        }
+        if (kUseSpatialReuse)
+        {
+            for (uint i = 0; i < kSpatialNeigborsNum; i++)
+            {
+                float rand = sampleNext1D(sg);
+                float radius = kSampleRadius * rand;
+                float angle = 2.0f * M_PI * frac(sin(gFrameCount * rand));
+                uint2 neighborPos = {
+                    pixel.x + uint(radius * cos(angle)),
+                    pixel.y + uint(radius * sin(angle))
+                };
+            }
+            // TODO: Combine Neighbor reservoirs.
+        }
+        if (kUseTemporalReuse)
+        {
         }
         lightIndex = r.currentSample;
         invPdf = r.getInvPDF();
@@ -212,10 +246,6 @@ float3 evalDirectAnalytic(const ShadingData sd, const IBSDF bsdf, SampleGenerato
 /*
  */
 
-float3 evalPrimaryRay(const ShadingData sd, const IBSDF bsdf, inout SampleGenerator sg)
-{
-    return bsdf.getProperties(sd).emission + evalDirectAnalytic(sd, bsdf, sg);
-}
 // raytracing main function
 float3 tracePath(uint2 pixel, uint2 screen)
 {
@@ -240,7 +270,7 @@ float3 tracePath(uint2 pixel, uint2 screen)
         float3 rayOrigin = sd.computeNewRayOrigin();
         // curve primitive消した
 
-        outputColor += evalPrimaryRay(sd, bsdf, sg);
+        outputColor += bsdf.getProperties(sd).emission + evalDirectAnalytic(pixel, sd, bsdf, sg);
 
         // ScatterRayData rayData = ScatterRayData(sg);
         // generateScatterRay(sd, bsdf, rayOrigin, rayData);
@@ -248,7 +278,7 @@ float3 tracePath(uint2 pixel, uint2 screen)
     }
     else
     {
-        outputColor = kUseEnvBackground ? gScene.envMap.eval(primaryRayDir) : kDefaultBackgroundColor;
+        outputColor = gScene.envMap.eval(primaryRayDir); // : kDefaultBackgroundColor;
     }
     return outputColor;
 }
