@@ -1,6 +1,7 @@
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
+// __exported importで補完が効かない
 import Scene.HitInfo;
 import Scene.HitInfoType;
 import Scene.Raytracing;
@@ -9,7 +10,6 @@ import Utils.Math.MathHelpers;
 import Utils.Geometry.GeometryHelpers;
 import Utils.Sampling.SampleGenerator;
 import Rendering.Lights.LightHelpers;
-import Rendering.Lights.EmissiveLightSamplerHelpers;
 
 cbuffer PerFrameCB
 {
@@ -17,59 +17,68 @@ cbuffer PerFrameCB
     uint gPRNGDimension;
 }
 
+// Inputs
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float4> gViewW;
 Texture2D<float4> gMVec;
-
-RWTexture2D<float4> gOutColor;
+RWTexture2D<float4> gOutputColor;
 
 #define is_valid(name) (is_valid_##name != 0)
+static const bool kUseAnalyticLights = true;
+static const bool kUseEmissiveLights = true;
+static const bool kUseEnvLight = true;
+static const bool kUseEnvBackground = true;
+static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
+static const float kRayMax = FLT_MAX;
+
 static const uint kRISSampleNums = RIS_SAMPLE_NUMS;
 static const bool kUseReSTIR = USE_RESTIR;
-// static const bool kUseTemporalReuse = USE_TEMPORAL_REUSE;
-// static const bool kUseSpatialReuse = USE_SPATIAL_REUSE;
+static const bool kUseTemporalReuse = USE_TEMPORAL_REUSE;
+static const bool kUseSpatialReuse = USE_SPATIAL_REUSE;
 
+// shadow ray strcuture
 struct ShadowRayData
 {
     bool visible;
 }
 
-struct RISReservoir<S>
+struct RISReservoir
 {
     float wSum;
-    S currentSample;
-    float3 pTarget;
+    uint currentSample;
+    // float3 pTarget;
+    float targetPdfSample;
     uint M;
-    __init(S sample)
+    __init(uint sample)
     {
         wSum = 0;
         M = 0;
         currentSample = sample;
-        pTarget = float3(0.f);
+        // pTarget = float3(0.f);
+        targetPdfSample = 0.f;
     }
     [mutating]
-    bool update(S xi, float wi, float3 pi, float rand)
+    bool update(uint xi, float wi, float pi, float rand)
     {
         wSum += wi;
-        M++;
+        // M += (uint)step(pi, 0.00001);
+        if (pi > 0.f)
+            M++;
         bool accept = rand < wi / wSum;
         if (accept)
         {
             currentSample = xi;
-            pTarget = pi;
+
+            targetPdfSample = pi;
         }
         return accept;
     }
 
-    float3 calcInvPdf()
+    float getInvPDF()
     {
-        return wSum / (M * pTarget);
+        return wSum / (M * targetPdfSample);
     }
 }
-
-// RISReservoir<S> combineReservoirs<S>(RISReservoir<S>[] rs, ) {
-
-// }
 
 float3 getPrimaryRayDir(uint2 pixel, uint2 screen, const Camera camera)
 {
@@ -83,37 +92,54 @@ float3 getPrimaryRayDir(uint2 pixel, uint2 screen, const Camera camera)
     }
 }
 
-ShadingData loadShadingData(const HitInfo hitInf, const float3 rayOrigin, const float3 rayDir, const ITextureSampler lod)
+ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const float3 rayDir, const ITextureSampler lod)
 {
-    VertexData vd = {};
-    uint matID = 0;
+    VertexData vertexData = {};
+    uint materialID = {};
 
-    if (hitInf.getType() == HitType::Triangle)
+// プリプロセッサかますと補完が壊れる
+#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_TRIANGLE_MESH)
+    if (hit.getType() == HitType::Triangle)
     {
-        const TriangleHit th = hitInf.getTriangleHit();
-        vd = gScene.getVertexData(th);
-        matID = gScene.getMaterialID(th.instanceID);
+        const TriangleHit th = hit.getTriangleHit();
+        vertexData = gScene.getVertexData(th);
+        materialID = gScene.getMaterialID(th.instanceID);
     }
+#endif
 
-    if (hitInf.getType() == HitType::DisplacedTriangle)
+#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_DISPLACED_TRIANGLE_MESH)
+    if (hit.getType() == HitType::DisplacedTriangle)
     {
-        const DisplacedTriangleHit dth = hitInf.getDisplacedTriangleHit();
-        vd = gScene.getVertexData(dth, -rayDir);
-        matID = gScene.getMaterialID(dth.instanceID);
+        const DisplacedTriangleHit dth = hit.getDisplacedTriangleHit();
+        vertexData = gScene.getVertexData(dth, -rayDir);
+        materialID = gScene.getMaterialID(dth.instanceID);
     }
-    if (hitInf.getType() == HitType::Curve)
+#endif
+
+#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_CURVE)
+    if (hit.getType() == HitType::Curve)
     {
-        const CurveHit ch = hitInf.getCurveHit();
-        vd = gScene.getVertexDataFromCurve(ch);
-        matID = gScene.getMaterialID(ch.instanceID);
+        const CurveHit ch = hit.getCurveHit();
+        vertexData = gScene.getVertexDataFromCurve(ch);
+        materialID = gScene.getMaterialID(ch.instanceID);
     }
-    if (hitInf.getType() == HitType::SDFGrid)
+#endif
+
+#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_SDF_GRID)
+    if (hit.getType() == HitType::SDFGrid)
     {
-        const SDFGridHit sh = hitInf.getSDFGridHit();
-        vd = gScene.getVertexDataFromSDFGrid(sh, rayOrigin, rayDir);
-        matID = gScene.getMaterialID(sh.instanceID);
+        const SDFGridHit sh = hit.getSDFGridHit();
+        vertexData = gScene.getVertexDataFromSDFGrid(sh, rayOrigin, rayDir);
+        materialID = gScene.getMaterialID(sh.instanceID);
     }
-    return gScene.materials.prepareShadingData(vd, matID, -rayDir, lod);
+#endif
+
+#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_CUSTOM)
+    {
+    }
+#endif
+    ShadingData sd = gScene.materials.prepareShadingData(vertexData, materialID, -rayDir, lod);
+    return sd;
 }
 
 bool traceShadowRay(float3 origin, float3 dir, float distance)
@@ -122,48 +148,54 @@ bool traceShadowRay(float3 origin, float3 dir, float distance)
     ray.Origin = origin;
     ray.Direction = dir;
     ray.TMin = 0.f;
-    ray.TMax = FLT_MAX;
-    ShadowRayData rayData = { false };
-    TraceRay(gScene.rtAccel, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff, 1, rayTypeCount, 1, ray, rayData);
+    ray.TMax = distance;
+
+    ShadowRayData rayData;
+    rayData.visible = false; // Set to true by miss shader if ray is not terminated before
+    TraceRay(gScene.rtAccel, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff /* instanceInclusionMask */, 1 /* hitIdx */, rayTypeCount, 1 /* missIdx */, ray, rayData);
+
     return rayData.visible;
 }
 
-float3 evalDirectAnalytic(const ShadingData sd, const IBSDF bsdf, ISampleGenerator sg)
+float3 evalDirectAnalytic(const ShadingData sd, const IBSDF bsdf, SampleGenerator sg)
 {
     const uint lightCount = gScene.getLightCount();
     if (lightCount == 0)
         return float3(0.f);
     uint lightIndex = 0;
     float3 invPdf = float3(0.f);
-    if (!kUseReSTIR)
+    if (kUseReSTIR)
+    {
+        RISReservoir r = RISReservoir(lightIndex);
+        for (uint i = 0; i < kRISSampleNums; i++)
+        {
+            // Sample LightID from uniform distribution
+            const uint xi = min(uint(sampleNext1D(sg) * lightCount), lightCount - 1);
+
+            AnalyticLightSample ls;
+            // Calculate from target distribution Fs*G*invPdf
+            float3 pi3f = float3(0.f);
+            if (sampleLight(sd.posW, gScene.getLight(xi), sg, ls))
+                pi3f = bsdf.eval(sd, ls.dir, sg) * ls.Li;
+
+            // Calculate weight proportional to p(xi)/q(xi). q() is uniform distribution,
+            // So simply choose Brightness of p(xi) as weight.
+            float pi = max(max(pi3f.x, pi3f.y), pi3f.z);
+            float wi = pi * lightCount; // lightCount means invPdf
+            // float3 wi = pi; // * lightCount
+            r.update(xi, wi, pi, sampleNext1D(sg));
+        }
+        lightIndex = r.currentSample;
+        invPdf = r.getInvPDF();
+    }
+    else
     {
         lightIndex = min(uint(sampleNext1D(sg) * lightCount), lightCount - 1);
         invPdf = lightCount;
     }
-    else
-    {
-        RISReservoir<uint> r = RISReservoir<uint>(lightIndex);
-        for (uint i = 0; i < kRISSampleNums; i++)
-        {
-            // Sample LightID from uniform distribution
-            float rand = sampleNext1D(sg);
-            const uint xi = min(uint(rand * lightCount), lightCount - 1);
-            AnalyticLightSample ls;
-            // Calculate from target distribution Fs*G*invPdf
-            float3 pi = float3(0.f);
-            if (sampleLight(sd.posW, gScene.getLight(lightIndex), sg, ls))
-                pi = bsdf.eval(sd, ls.dir, sg) * ls.Li * lightCount; // lightCount means invPdf
-            // Calculate weight proportional to p(xi)/q(xi). q() is uniform distribution,
-            // So simply choose Brightness of p(xi) as weight.
-            float wi = max(max(pi.x, pi.y), pi.z); // * lightCount
-            r.update(xi, wi, pi, rand);
-        }
-        lightIndex = r.currentSample;
-        invPdf = r.calcInvPdf();
-    }
     AnalyticLightSample ls;
     if (!sampleLight(sd.posW, gScene.getLight(lightIndex), sg, ls))
-        return float(0.f);
+        return float3(0.f);
     const uint lobeTypes = bsdf.getLobes(sd);
 
     if (dot(ls.dir, sd.N) <= kMinCosTheta && !(lobeTypes & (uint)LobeType::Transmission))
@@ -177,10 +209,18 @@ float3 evalDirectAnalytic(const ShadingData sd, const IBSDF bsdf, ISampleGenerat
         return float3(0.f);
     return bsdf.eval(sd, ls.dir, sg) * ls.Li * invPdf;
 }
+/*
+ */
 
+float3 evalPrimaryRay(const ShadingData sd, const IBSDF bsdf, inout SampleGenerator sg)
+{
+    return bsdf.getProperties(sd).emission + evalDirectAnalytic(sd, bsdf, sg);
+}
+// raytracing main function
 float3 tracePath(uint2 pixel, uint2 screen)
 {
-    float3 out = float3(0.f);
+    float3 outputColor = float3(0.f);
+
     const float3 primaryRayDir = getPrimaryRayDir(pixel, screen, gScene.camera);
     const float3 primaryRayOrigin = gScene.camera.getPosition();
 
@@ -191,30 +231,39 @@ float3 tracePath(uint2 pixel, uint2 screen)
         let lod = ExplicitLodTextureSampler(0.f);
 
         ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
+
         let bsdf = gScene.materials.getBSDF(sd, lod);
         SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
         for (uint i = 0; i < gPRNGDimension; i++)
             sampleNext1D(sg);
-        float3 rayOrigin = sd.computeNewRayOrigin();
 
-        out = evalDirectAnalytic(sd, bsdf, sg) + bsdf.getProperties(sd).emission;
+        float3 rayOrigin = sd.computeNewRayOrigin();
+        // curve primitive消した
+
+        outputColor += evalPrimaryRay(sd, bsdf, sg);
+
+        // ScatterRayData rayData = ScatterRayData(sg);
+        // generateScatterRay(sd, bsdf, rayOrigin, rayData);
+        // outputColor += evalScatterRayAll(rayData);
     }
     else
     {
-        out = gScene.envMap.eval(primaryRayDir);
+        outputColor = kUseEnvBackground ? gScene.envMap.eval(primaryRayDir) : kDefaultBackgroundColor;
     }
-    return out;
+    return outputColor;
 }
 
 [shader("miss")]
 void shadowMiss(inout ShadowRayData rayData)
 {
+    // The miss shader is executed if the ray misses all geometry. Mark as visible.
     rayData.visible = true;
 }
 
 [shader("anyhit")]
-void shadowTriangleMeshAnyHit(inout ShadingData rayData, BuiltInTriangleIntersectionAttributes attribs)
+void shadowTriangleMeshAnyHit(inout ShadowRayData rayData, BuiltInTriangleIntersectionAttributes attribs)
 {
+    // Alpha test for non-opaque geometry.
     GeometryInstanceID instanceID = getGeometryInstanceID();
     VertexData v = getVertexData(instanceID, PrimitiveIndex(), attribs);
     const uint materialID = gScene.getMaterialID(instanceID);
@@ -227,6 +276,8 @@ void rayGen()
 {
     uint2 pixel = DispatchRaysIndex().xy;
     uint2 frameDim = DispatchRaysDimensions().xy;
-    float3 color = float3(0.f); // tracePath(pixel, frameDim);
-    gOutColor[pixel] = float4(color, 1.0f);
+
+    float3 color = tracePath(pixel, frameDim);
+
+    gOutputColor[pixel] = float4(color, 1.f);
 }

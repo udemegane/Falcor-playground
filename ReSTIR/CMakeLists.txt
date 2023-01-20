@@ -1,9 +1,9 @@
 add_renderpass(ReSTIR)
 
 target_sources(ReSTIR PRIVATE
-    ReSTIR.rt.slang
     ReSTIR.cpp
     ReSTIR.h
+    ReSTIR.rt.slang
 )
 
 target_copy_shaders(ReSTIR RenderPasses/ReSTIR)

@@ -27,9 +27,7 @@
  **************************************************************************/
 #pragma once
 
-#include <vector>
 #include "Falcor.h"
-#include "Utils/Sampling/SampleGenerator.h"
 
 using namespace Falcor;
 
@@ -50,8 +48,6 @@ public:
 
     virtual RenderPassReflection reflect(const CompileData &compileData) override;
 
-    virtual void compile(RenderContext *pRenderContext, const CompileData &compileData) override {}
-
     virtual void execute(RenderContext *pRenderContext, const RenderData &renderData) override;
 
     virtual void renderUI(Gui::Widgets &widget) override;
@@ -63,28 +59,25 @@ public:
     virtual bool onKeyEvent(const KeyboardEvent &keyEvent) override { return false; }
 
 private:
-    ReSTIR(const Dictionary &dict);
-
+    ReSTIR(const Dictionary &dict);//  : RenderPass(kInfo) {}
     void parseDictionary(const Dictionary &dict);
 
     void prepareVars();
 
     Scene::SharedPtr mpScene;
-    SampleGenerator::SharedPtr mpSampleGenerator;
+    SampleGenerator::SharedPtr mpSampleGenerator; // GPU上でのサンプル生成器　シェーダーに渡す
 
     uint mRISSampleNums = 8;
-    bool mUseReSTIR = false;
-    bool mUseTemporalReuse = true;
-    bool mUseSpatialReuse = true;
-    Buffer::SharedPtr mpOutputReservoir;
+    bool mUseReSTIR = true;
+    bool mUseTemporalReuse = false;
+    bool mUseSpatialReuse = false;
 
-    uint mFrameCount = 0;
+    uint mFrameCount = 0; // 累積フレーム数
     bool mOptionsChanged = false;
 
     struct {
-        RtProgram::SharedPtr pProgram = nullptr;
-        RtProgramVars::SharedPtr pVars = nullptr;
-        RtBindingTable::SharedPtr pBindingTable = nullptr;
+        RtProgram::SharedPtr pProgram;
+        RtBindingTable::SharedPtr pBindingTable;
+        RtProgramVars::SharedPtr pVars;
     } mRtState;
-
 };

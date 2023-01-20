@@ -30,7 +30,7 @@
 #include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
 
-const RenderPass::Info ReSTIR::kInfo{"ReSTIR", "Non-Official Simple ReSTIR implementation"};
+const RenderPass::Info ReSTIR::kInfo{"ReSTIR", "Insert pass description here."};
 
 // Don't remove this. it's required for hot-reload to function properly
 extern "C" FALCOR_API_EXPORT const char *getProjDir() {
@@ -42,18 +42,25 @@ extern "C" FALCOR_API_EXPORT void getPasses(Falcor::RenderPassLibrary &lib) {
 }
 
 namespace {
+    const char kShaderFile[] = "RenderPasses/ReSTIR/ReSTIR.rt.slang";
+
     const uint32_t kMaxPayloadSizeBytes = 72u;
     const uint32_t kMaxRecursionDepth = 2u;
-    const char kShaderFile[] = "RenderPasses/ReSTIR/ReSTIR.rt.slang";
+
     const char kInputViewDir[] = "viewW";
+
     const ChannelList kInputChannels = {
-            {"vBuffer",    "gVBuffer", ""},
+            {"vBuffer",    "gVBuffer", "Visibility buffer"},
             {"motionVecW", "gMVec",    "world-space motion vector"},
-            {"viewW",      "gViewW",   "world-space view vector", true},
+            {"viewW",      "gViewW",   "World-Space view Direction", true},
     };
+
     const ChannelList kOutputChannels = {
-            {"color", "gOutColor", "", false, ResourceFormat::RGBA32Float}
-    };
+            {"color", "gOutputColor", "out color by pathtracing", false, ResourceFormat::RGBA32Float}};
+
+    const char kMaxBounces[] = "maxBounces";
+    const char kComputeDirect[] = "computeDirect";
+    const char kUseImportanceSampling[] = "useImportanceSampling";
 
     const char kRISSampleNums[] = "risSampleNums";
     const char kUseReSTIR[] = "useReSTIR";
@@ -62,8 +69,14 @@ namespace {
 }
 
 ReSTIR::SharedPtr ReSTIR::create(RenderContext *pRenderContext, const Dictionary &dict) {
-    SharedPtr pPass = SharedPtr(new ReSTIR(dict));
-    return pPass;
+    return SharedPtr(new ReSTIR(dict));
+}
+
+ReSTIR::ReSTIR(const Dictionary &dict) : RenderPass(kInfo) {
+    parseDictionary(dict);
+
+    mpSampleGenerator = SampleGenerator::create(SAMPLE_GENERATOR_DEFAULT);
+    FALCOR_ASSERT(mpSampleGenerator);
 }
 
 void ReSTIR::parseDictionary(const Dictionary &dict) {
@@ -78,13 +91,6 @@ void ReSTIR::parseDictionary(const Dictionary &dict) {
             mUseSpatialReuse = v;
         }
     }
-}
-
-ReSTIR::ReSTIR(const Dictionary &dict) : RenderPass(kInfo) {
-    parseDictionary(dict);
-
-    mpSampleGenerator = SampleGenerator::create(SAMPLE_GENERATOR_UNIFORM);
-    FALCOR_ASSERT(mpSampleGenerator);
 }
 
 Dictionary ReSTIR::getScriptingDictionary() {
@@ -105,26 +111,25 @@ RenderPassReflection ReSTIR::reflect(const CompileData &compileData) {
 }
 
 void ReSTIR::execute(RenderContext *pRenderContext, const RenderData &renderData) {
-    // renderData holds the requested resources
-    // auto& pTexture = renderData.getTexture("src");
+    // オプション変数を更新する
     auto &dict = renderData.getDictionary();
     if (mOptionsChanged) {
         auto flags = dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None);
         dict[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
         mOptionsChanged = false;
     }
+
     if (!mpScene) {
-        for (const auto &cd: kOutputChannels) {
+        for (const auto cd: kOutputChannels) {
             Texture *pDst = renderData.getTexture(cd.name).get();
-            if (pDst) {
-                pRenderContext->clearTexture(pDst, float4(0, 0, 0, 0));
-            }
+            if (pDst)
+                pRenderContext->clearTexture(pDst);
         }
         return;
     }
 
     if (is_set(mpScene->getUpdates(), Scene::UpdateFlags::GeometryChanged)) {
-        throw RuntimeError("This ReSTIR does not support geometry change");
+        throw RuntimeError("MinimalPathTracer: This render pass does not support scene geometry changes.");
     }
 
     if (mpScene->getRenderSettings().useEmissiveLights) {
@@ -135,16 +140,16 @@ void ReSTIR::execute(RenderContext *pRenderContext, const RenderData &renderData
     if (useDOF && renderData[kInputViewDir] == nullptr) {
         logWarning("Depth-of-field requires the '{}' input. Expect incorrect shading.", kInputViewDir);
     }
-
-    mRtState.pProgram->addDefine("RIS_SAMPLE_NUMS", std::to_string(mRISSampleNums));
     mRtState.pProgram->addDefine("USE_RESTIR", mUseReSTIR ? "1" : "0");
-//    mRtState.pProgram->addDefine("USE_TEMPORAL_REUSE", mUseTemporalReuse ? "1" : "0");
-//    mRtState.pProgram->addDefine("USE_SPATIAL_REUSE", mUseSpatialReuse ? "1" : "0");
+    mRtState.pProgram->addDefine("RIS_SAMPLE_NUMS", std::to_string(mRISSampleNums));
+    mRtState.pProgram->addDefine("USE_TEMPORAL_REUSE", mUseTemporalReuse ? "1" : "0");
+    mRtState.pProgram->addDefine("USE_SPATIAL_REUSE", mUseSpatialReuse ? "1" : "0");
 
     mRtState.pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
     mRtState.pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
 
-    if (!mRtState.pVars)prepareVars();
+    if (!mRtState.pVars)
+        prepareVars();
     FALCOR_ASSERT(mRtState.pVars);
 
     auto var = mRtState.pVars->getRootVar();
@@ -152,17 +157,22 @@ void ReSTIR::execute(RenderContext *pRenderContext, const RenderData &renderData
     var["PerFrameCB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension]
                                                                                    : 0u;
 
-    for (const auto &channel: kInputChannels)
-        if (!channel.texname.empty())
-            var[channel.texname] = renderData.getTexture(channel.name);
-    for (const auto &channel: kOutputChannels)
-        if (!channel.texname.empty())
-            var[channel.texname] = renderData.getTexture(channel.name);
+    auto bind = [&](const ChannelDesc &desc) {
+        if (!desc.texname.empty()) {
+            var[desc.texname] = renderData.getTexture(desc.name);
+        }
+    };
+    for (auto channel: kInputChannels)
+        bind(channel);
+    for (auto channel: kOutputChannels)
+        bind(channel);
 
-    const uint2 &targetDim = renderData.getDefaultTextureDims();
+    const uint2 targetDim = renderData.getDefaultTextureDims();
     FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
     mpScene->raytrace(pRenderContext, mRtState.pProgram.get(), mRtState.pVars, uint3(targetDim, 1));
     mFrameCount++;
+    // renderData holds the requested resources
+    // auto& pTexture = renderData.getTexture("src");
 }
 
 void ReSTIR::prepareVars() {
@@ -171,6 +181,7 @@ void ReSTIR::prepareVars() {
 
     mRtState.pProgram->addDefines(mpSampleGenerator->getDefines());
     mRtState.pProgram->setTypeConformances(mpScene->getTypeConformances());
+
     mRtState.pVars = RtProgramVars::create(mRtState.pProgram, mRtState.pBindingTable);
 
     auto var = mRtState.pVars->getRootVar();
@@ -178,13 +189,15 @@ void ReSTIR::prepareVars() {
 }
 
 void ReSTIR::setScene(RenderContext *pRenderContext, const Scene::SharedPtr &pScene) {
-    mpScene = pScene;
     mRtState.pProgram = nullptr;
-    mRtState.pVars = nullptr;
     mRtState.pBindingTable = nullptr;
+    mRtState.pVars = nullptr;
     mFrameCount = 0;
-    if (!mpScene)return;
-    if (mpScene->hasGeometryType(Scene::GeometryType::Custom))
+    mpScene = pScene;
+    if (!mpScene)
+        return;
+
+    if (pScene->hasGeometryType(Scene::GeometryType::Custom))
         logWarning("ReSTIR: This render pass does not support custom primitives.");
 
     RtProgram::Desc desc;
@@ -193,14 +206,16 @@ void ReSTIR::setScene(RenderContext *pRenderContext, const Scene::SharedPtr &pSc
     desc.setMaxPayloadSize(kMaxPayloadSizeBytes);
     desc.setMaxAttributeSize(mpScene->getRaytracingMaxAttributeSize());
     desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
-    mRtState.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());
 
-    mRtState.pBindingTable->setRayGen(desc.addRayGen("rayGen"));
-    mRtState.pBindingTable->setMiss(0, desc.addMiss("shadowMiss"));
+    mRtState.pBindingTable = RtBindingTable::create(2, 1, mpScene->getGeometryCount());
+    auto &sbt = mRtState.pBindingTable;
+    sbt->setRayGen(desc.addRayGen("rayGen"));
+    // sbt->setMiss(0, desc.addMiss("scatterMiss"));
+    sbt->setMiss(1, desc.addMiss("shadowMiss"));
 
     if (mpScene->hasGeometryType(Scene::GeometryType::TriangleMesh)) {
-        mRtState.pBindingTable->setHitGroup(0, mpScene->getGeometryIDs(Scene::GeometryType::TriangleMesh),
-                                            desc.addHitGroup("", "shadowTriangleMeshAnyHit"));
+        sbt->setHitGroup(0, mpScene->getGeometryIDs(Scene::GeometryType::TriangleMesh),
+                         desc.addHitGroup("", "shadowTriangleMeshAnyHit"));
     }
 
     mRtState.pProgram = RtProgram::create(desc, mpScene->getSceneDefines());
@@ -208,10 +223,12 @@ void ReSTIR::setScene(RenderContext *pRenderContext, const Scene::SharedPtr &pSc
 
 void ReSTIR::renderUI(Gui::Widgets &widget) {
     bool dirty = false;
+    dirty |= widget.var("M (Importance Resampling Count)", mRISSampleNums, 1u, 100u);
     dirty |= widget.checkbox("Use ReSTIR", mUseReSTIR);
     dirty |= widget.checkbox("Use Temporal Reuse", mUseTemporalReuse);
     dirty |= widget.checkbox("Use Spatial Reuse", mUseSpatialReuse);
-
+    // If rendering options that modify the output have changed, set flag to indicate that.
+    // In execute() we will pass the flag to other passes for reset of temporal data etc.
     if (dirty) {
         mOptionsChanged = true;
     }
