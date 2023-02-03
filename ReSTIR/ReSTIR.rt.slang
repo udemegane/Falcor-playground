@@ -56,7 +56,8 @@ struct RISReservoir<S>
 // Inputs
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float4> gViewW;
-Texture2D<float4> gMVec;
+Texture2D<float2> gMVec;
+Texture2D<float> gDepth;
 
 RWStructuredBuffer<RISReservoir<uint>> prevFrameReservoir;
 
@@ -93,6 +94,12 @@ struct ShadowRayData
 //     }
 //     return res;
 // }
+
+int getPrevFramePos1D(uint2 pixelPos, uint2 screen)
+{
+    float2 motion = gMVec.Load(int3(pixelPos, 0)).xy;
+    return int(motion.x * screen.x + motion.y);
+}
 
 float3 getPrimaryRayDir(uint2 pixel, uint2 screen, const Camera camera)
 {

@@ -75,6 +75,8 @@ private:
     uint mFrameCount = 0; // 累積フレーム数
     bool mOptionsChanged = false;
 
+    Buffer::SharedPtr mpPrevFrameBuffer; // 前フレームのカラーバッファ
+    Buffer::SharedPtr mpPrevFrameReservoir;
     struct {
         RtProgram::SharedPtr pProgram;
         RtBindingTable::SharedPtr pBindingTable;
