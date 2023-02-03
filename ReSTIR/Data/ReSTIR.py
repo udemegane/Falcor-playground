@@ -15,6 +15,7 @@ def render_graph_ReSTIR():
     g.addEdge('VBufferRT.mvec', 'ReSTIR.motionVecW')
     g.addEdge('VBufferRT.vbuffer', 'ReSTIR.vBuffer')
     g.addEdge('VBufferRT.viewW', 'ReSTIR.viewW')
+    g.addEdge('VBufferRT.depth', 'ReSTIR.depth')
     g.addEdge('ReSTIR.color', 'AccumulatePass.input')
     g.markOutput('AccumulatePass.output')
     return g
