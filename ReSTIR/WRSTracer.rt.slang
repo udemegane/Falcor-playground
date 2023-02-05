@@ -27,6 +27,7 @@ Texture2D<float> gDepth;
 // InOut
 // RWStructuredBuffer<RISReservoir> prevFrameReservoir;
 RWStructuredBuffer<RISReservoir> outputReservoir;
+// RWStructuredBuffer<Params> params;
 
 // Output
 RWTexture2D<float4> gOutputColor;
@@ -43,11 +44,6 @@ static const bool kUseTemporalReuse = USE_TEMPORAL_REUSE;
 static const uint kTemporalReuseMaxM = TEMPORAL_REUSE_MAX_M;
 static const bool kUseAutoSetMaxM = USE_AUTO_SET_MAX_M;
 static const bool kUseSpatialReuse = USE_SPATIAL_REUSE;
-
-float randSimple(float2 p)
-{
-    return frac(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
-}
 
 // shadow ray strcuture
 struct ShadowRayData
@@ -66,12 +62,6 @@ struct ShadowRayData
 //     res.M = ra.M + rb.M;
 //     return res;
 // }
-
-int getPrevFramePos1D(uint2 pixelPos, uint2 screen)
-{
-    uint2 prevPixPos = pixelPos + screen * gMVec[pixelPos];
-    return prevPixPos.x + screen.x * prevPixPos.y;
-}
 
 float3 getPrimaryRayDir(uint2 pixel, uint2 screen, const Camera camera)
 {
@@ -94,6 +84,7 @@ ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const flo
 #if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_TRIANGLE_MESH)
     if (hit.getType() == HitType::Triangle)
     {
+        gScene;
         const TriangleHit th = hit.getTriangleHit();
         vertexData = gScene.getVertexData(th);
         materialID = gScene.getMaterialID(th.instanceID);
