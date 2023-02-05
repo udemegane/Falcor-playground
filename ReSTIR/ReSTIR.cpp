@@ -45,7 +45,8 @@ extern "C" FALCOR_API_EXPORT void getPasses(Falcor::RenderPassLibrary &lib)
 
 namespace
 {
-    const char kShaderFile[] = "RenderPasses/ReSTIR/ReSTIR.rt.slang";
+    const char kTracerFile[] = "RenderPasses/ReSTIR/TemporalWRSTracer.rt.slang";
+    const char kFinalShadingFile[] = "RenderPasses/ReSTIR/SpatialReuse.cs.slang";
 
     const uint32_t kMaxPayloadSizeBytes = 72u;
     const uint32_t kMaxRecursionDepth = 2u;
@@ -254,7 +255,7 @@ void ReSTIR::setScene(RenderContext *pRenderContext, const Scene::SharedPtr &pSc
 
     RtProgram::Desc desc;
     desc.addShaderModules(mpScene->getShaderModules());
-    desc.addShaderLibrary(kShaderFile);
+    desc.addShaderLibrary(kTracerFile);
     desc.setMaxPayloadSize(kMaxPayloadSizeBytes);
     desc.setMaxAttributeSize(mpScene->getRaytracingMaxAttributeSize());
     desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);

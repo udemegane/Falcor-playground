@@ -10,47 +10,12 @@ import Utils.Math.MathHelpers;
 import Utils.Geometry.GeometryHelpers;
 import Utils.Sampling.SampleGenerator;
 import Rendering.Lights.LightHelpers;
+import Reservoir;
 
 cbuffer PerFrameCB
 {
     uint gFrameCount;
     uint gPRNGDimension;
-}
-
-struct RISReservoir<S>
-{
-    float wSum;
-    S currentSample;
-    float targetPdfSample;
-    uint M;
-    __init(const S sample)
-    {
-        wSum = 0;
-        M = 0;
-        currentSample = sample;
-        // pTarget = float3(0.f);
-        targetPdfSample = 0.f;
-    }
-    [mutating]
-    bool update(const S xi, const float wi, const float pi, const float rand)
-    {
-        wSum += wi;
-        // M += (uint)step(pi, 0.00001);
-        bool accept = rand <= wi / wSum;
-        if (accept || M == 0)
-        {
-            currentSample = xi;
-
-            targetPdfSample = pi;
-        }
-        M++;
-        return accept;
-    }
-
-    float getInvPDF()
-    {
-        return wSum / (M * targetPdfSample);
-    }
 }
 
 // Inputs
@@ -59,7 +24,8 @@ Texture2D<float4> gViewW;
 Texture2D<float2> gMVec;
 Texture2D<float> gDepth;
 
-RWStructuredBuffer<RISReservoir<uint>> prevFrameReservoir;
+// InOut
+RWStructuredBuffer<RISReservoir> prevFrameReservoir;
 
 // Output
 RWTexture2D<float4> gOutputColor;
@@ -76,8 +42,6 @@ static const bool kUseTemporalReuse = USE_TEMPORAL_REUSE;
 static const uint kTemporalReuseMaxM = TEMPORAL_REUSE_MAX_M;
 static const bool kUseAutoSetMaxM = USE_AUTO_SET_MAX_M;
 static const bool kUseSpatialReuse = USE_SPATIAL_REUSE;
-static const uint kSpatialNeigborsNum = 5;
-static const float kSampleRadius = 30.0;
 
 float randSimple(float2 p)
 {
@@ -90,17 +54,17 @@ struct ShadowRayData
     bool visible;
 }
 
-RISReservoir<S> combineReservoir<S>(const RISReservoir<S> ra, const RISReservoir<S> rb)
-{
-    RISReservoir<S> res;
-    // uint M = 0;
-    res.update(ra.currentSample, ra.wSum, ra.targetPdfSample, randSimple((ra.wSum, ra.targetPdfSample)));
-    // M += ra.M;
-    res.update(rb.currentSample, rb.wSum, rb.targetPdfSample, randSimple((rb.wSum, rb.targetPdfSample)));
-    // M += rb.M;
-    res.M = ra.M + rb.M;
-    return res;
-}
+// RISReservoir<S> combineReservoir<S>(const RISReservoir<S> ra, const RISReservoir<S> rb)
+// {
+//     RISReservoir<S> res;
+//     // uint M = 0;
+//     res.update(ra.currentSample, ra.wSum, ra.targetPdfSample, randSimple((ra.wSum, ra.targetPdfSample)));
+//     // M += ra.M;
+//     res.update(rb.currentSample, rb.wSum, rb.targetPdfSample, randSimple((rb.wSum, rb.targetPdfSample)));
+//     // M += rb.M;
+//     res.M = ra.M + rb.M;
+//     return res;
+// }
 
 int getPrevFramePos1D(uint2 pixelPos, uint2 screen)
 {
@@ -195,7 +159,7 @@ float3 evalDirectAnalytic(const uint2 pixel, const uint2 screen, const ShadingDa
     if (kUseReSTIR)
     {
 
-        RISReservoir<uint> r = RISReservoir<uint>(lightIndex);
+        RISReservoir r = RISReservoir();
         for (uint i = 0; i < kRISSampleNums; i++)
         {
             float2 rand = sampleNext2D(sg);
@@ -235,7 +199,8 @@ float3 evalDirectAnalytic(const uint2 pixel, const uint2 screen, const ShadingDa
 
         if (kUseTemporalReuse)
         {
-            RISReservoir<uint> rprev = prevFrameReservoir[getPrevFramePos1D(pixel, screen)];
+            RISReservoir rprev = prevFrameReservoir[getPrevFramePos1D(pixel, screen)];
+            // clamp previous frame reservoir length.
             uint max = kUseAutoSetMaxM ? lightCount / 4 : kTemporalReuseMaxM;
             if (rprev.M > r.M * max)
             {
@@ -243,16 +208,14 @@ float3 evalDirectAnalytic(const uint2 pixel, const uint2 screen, const ShadingDa
                 rprev.wSum *= ratio;
                 rprev.M = max * r.M;
             }
-            RISReservoir<uint> res = RISReservoir<uint>(0);
-            res.update(r.currentSample, r.wSum, r.targetPdfSample, randSimple((r.wSum, rprev.targetPdfSample)));
-            res.update(rprev.currentSample, rprev.wSum, rprev.targetPdfSample, randSimple((rprev.wSum, r.targetPdfSample)));
-            res.M = r.M + rprev.M; // clamp(rprev.M, 0, r.M * 20);
-            // r.wSum = r.wSum + rprev.wSum * 0.000001 + res.wSum * 0.000001; // コンパイラだます
+            RISReservoir res = RISReservoir();
+            res.update(r.currentSampleId, r.wSum, r.targetPdfSample, randSimple((r.wSum, rprev.targetPdfSample)));
+            res.update(rprev.currentSampleId, rprev.wSum, rprev.targetPdfSample, randSimple((rprev.wSum, r.targetPdfSample)));
+            res.M = r.M + rprev.M;
             r = res;
-            // r = combineReservoir<uint>(r, prevFrameReservoir[ppos]);
         }
         prevFrameReservoir[pixel.x + screen.x * pixel.y] = r; // for next frame;
-        lightIndex = r.currentSample;
+        lightIndex = r.currentSampleId;
         invPdf = r.getInvPDF();
     }
     else
