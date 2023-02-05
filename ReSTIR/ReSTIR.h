@@ -63,6 +63,7 @@ private:
     ReSTIR(const Dictionary &dict); //  : RenderPass(kInfo) {}
     void parseDictionary(const Dictionary &dict);
     void prepareRtVars();
+    void prepareCsVars();
     void traceray(RenderContext *pRenderContext, const RenderData &renderData);
     void spatioTemporalReuse(RenderContext *pRenderContext, const RenderData &renderData);
 
@@ -79,6 +80,7 @@ private:
     uint mFrameCount = 0; // 累積フレーム数
     bool mOptionsChanged = false;
 
+    Texture::SharedPtr mpInterColor;
     // Buffer::SharedPtr mpPrevFrameBuffer;
     Buffer::SharedPtr mpPrevFrameReservoir;
     Buffer::SharedPtr mpIntermediateReservoir;

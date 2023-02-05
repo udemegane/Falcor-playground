@@ -45,8 +45,8 @@ extern "C" FALCOR_API_EXPORT void getPasses(Falcor::RenderPassLibrary &lib)
 
 namespace
 {
-    const char kTracerFile[] = "RenderPasses/ReSTIR/TemporalWRSTracer.rt.slang";
-    const char kFinalShadingFile[] = "RenderPasses/ReSTIR/SpatialReuse.cs.slang";
+    const char kTracerFile[] = "RenderPasses/ReSTIR/WRSTracer.rt.slang";
+    const char kFinalShadingFile[] = "RenderPasses/ReSTIR/SpatioTemporalReuse.cs.slang";
 
     const uint32_t kMaxPayloadSizeBytes = 72u;
     const uint32_t kMaxRecursionDepth = 2u;
@@ -230,6 +230,7 @@ void ReSTIR::execute(RenderContext *pRenderContext, const RenderData &renderData
     // pRenderContext->copyResource(mpPrevFrameReservoir.get(), mpPrevFrameReservoir.get());
     // renderData holds the requested resources
     // auto& pTexture = renderData.getTexture("src");
+    spatioTemporalReuse(pRenderContext, renderData);
     mFrameCount++;
 }
 void ReSTIR::traceray(RenderContext *pRenderContext, const RenderData &renderData)
@@ -280,6 +281,16 @@ void ReSTIR::traceray(RenderContext *pRenderContext, const RenderData &renderDat
 }
 void ReSTIR::spatioTemporalReuse(RenderContext *pRenderContext, const RenderData &renderData)
 {
+    mCsState.pProgram->addDefine("USE_RESTIR", mUseReSTIR ? "1" : "0");
+    mCsState.pProgram->addDefine("TEMPORAL_REUSE_MAX_M", std::to_string(mTemporalReuseMaxM));
+    mCsState.pProgram->addDefine("USE_AUTO_SET_MAX_M", mAutoSetMaxM ? "1" : "0");
+    mCsState.pProgram->addDefine("USE_TEMPORAL_REUSE", (mUseTemporalReuse && mFrameCount != 0) ? "1" : "0");
+    mCsState.pProgram->addDefine("USE_SPATIAL_REUSE", mUseSpatialReuse ? "1" : "0");
+
+    mRtState.pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
+    if(!mCsState.pVars)
+        prepareCsVars();
+    FALCOR_ASSERT(mCsState.pVars);
     auto var = mCsState.pVars->getRootVar();
     const uint2 targetDim = renderData.getDefaultTextureDims();
     if (!mpPrevFrameReservoir)
@@ -290,7 +301,17 @@ void ReSTIR::spatioTemporalReuse(RenderContext *pRenderContext, const RenderData
                                                             ResourceBindFlags::UnorderedAccess,
                                                         Buffer::CpuAccess::None, nullptr, false);
     }
+    FALCOR_ASSERT(mpIntermediateReservoir);
+    var["PerFrameCB"]["gFrameCount"] = mFrameCount;
+    var["PerFrameCB"]["gScreen"] = targetDim;
     var["prevFrameReservoir"] = mpPrevFrameReservoir;
+    var["intermediateReservoir"] = mpIntermediateReservoir;
+    var["gMotionVector"]= renderData.getTexture("motionVecW");
+    var["gDepth"] = renderData.getTexture("depth");
+    var["gOutputColor"] = renderData.getTexture("color");
+    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
+    mCsState.pState->setProgram(mCsState.pProgram);
+    pRenderContext->dispatch(mCsState.pState.get(), mCsState.pVars.get(), uint3(targetDim, 1u));
 }
 void ReSTIR::prepareRtVars()
 {
@@ -306,11 +327,19 @@ void ReSTIR::prepareRtVars()
     mpSampleGenerator->setShaderData(var);
 }
 
+void ReSTIR::prepareCsVars()
+{
+    FALCOR_ASSERT(mpScene);
+    FALCOR_ASSERT(mCsState.pProgram);
+    mCsState.pProgram->addDefines(mpSampleGenerator->getDefines());
+//    mCsState.pProgram->setTypeConformances(mpScene->getTypeConformances());
+    mCsState.pVars = ComputeVars::create(mCsState.pProgram->getReflector());
+    auto var = mCsState.pVars->getRootVar();
+    mpSampleGenerator->setShaderData(var);
+}
+
 void ReSTIR::setScene(RenderContext *pRenderContext, const Scene::SharedPtr &pScene)
 {
-    mRtState.pProgram = nullptr;
-    mRtState.pBindingTable = nullptr;
-    mRtState.pVars = nullptr;
     mFrameCount = 0;
     mpScene = pScene;
     if (!mpScene)
@@ -319,6 +348,9 @@ void ReSTIR::setScene(RenderContext *pRenderContext, const Scene::SharedPtr &pSc
     if (pScene->hasGeometryType(Scene::GeometryType::Custom))
         logWarning("ReSTIR: This render pass does not support custom primitives.");
 
+    mRtState.pProgram = nullptr;
+    mRtState.pBindingTable = nullptr;
+    mRtState.pVars = nullptr;
     RtProgram::Desc desc;
     desc.addShaderModules(mpScene->getShaderModules());
     desc.addShaderLibrary(kTracerFile);
@@ -339,6 +371,12 @@ void ReSTIR::setScene(RenderContext *pRenderContext, const Scene::SharedPtr &pSc
     }
 
     mRtState.pProgram = RtProgram::create(desc, mpScene->getSceneDefines());
+
+    mCsState.pProgram = nullptr;
+    mCsState.pVars = nullptr;
+    mCsState.pState = nullptr;
+    mCsState.pProgram = ComputeProgram::createFromFile(kFinalShadingFile, "main", Program::DefineList(), Shader::CompilerFlags::TreatWarningsAsErrors);
+    mCsState.pState = ComputeState::create();
 }
 
 void ReSTIR::renderUI(Gui::Widgets &widget)
