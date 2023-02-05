@@ -62,7 +62,12 @@ namespace
 
     const ChannelList kOutputChannels = {
         {"color", "gOutputColor", "out color by pathtracing", false, ResourceFormat::RGBA32Float}};
-
+    //    const ChannelList kRtOutputChannnels = {
+    //
+    //    };
+    //    const ChannelList  kCsInputChannels ={
+    //
+    //    };
     const char kMaxBounces[] = "maxBounces";
     const char kComputeDirect[] = "computeDirect";
     const char kUseImportanceSampling[] = "useImportanceSampling";
@@ -176,6 +181,59 @@ void ReSTIR::execute(RenderContext *pRenderContext, const RenderData &renderData
     {
         logWarning("Depth-of-field requires the '{}' input. Expect incorrect shading.", kInputViewDir);
     }
+    traceray(pRenderContext, renderData);
+    //    mRtState.pProgram->addDefine("USE_RESTIR", mUseReSTIR ? "1" : "0");
+    //    mRtState.pProgram->addDefine("RIS_SAMPLE_NUMS", std::to_string(mRISSampleNums));
+    //    mRtState.pProgram->addDefine("TEMPORAL_REUSE_MAX_M", std::to_string(mTemporalReuseMaxM));
+    //    mRtState.pProgram->addDefine("USE_AUTO_SET_MAX_M", mAutoSetMaxM ? "1" : "0");
+    //    mRtState.pProgram->addDefine("USE_TEMPORAL_REUSE", (mUseTemporalReuse && mFrameCount != 0) ? "1" : "0");
+    //    mRtState.pProgram->addDefine("USE_SPATIAL_REUSE", mUseSpatialReuse ? "1" : "0");
+    //
+    //    mRtState.pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
+    //    mRtState.pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
+    //
+    //    if (!mRtState.pVars)
+    //        prepareRtVars();
+    //    FALCOR_ASSERT(mRtState.pVars);
+    //
+    //    auto var = mRtState.pVars->getRootVar();
+    //    var["PerFrameCB"]["gFrameCount"] = mFrameCount;
+    //    var["PerFrameCB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension]
+    //                                                                                   : 0u;
+    //    const uint2 targetDim = renderData.getDefaultTextureDims();
+    //    if (!mpPrevFrameReservoir)
+    //    {
+    //        uint32_t reservoirCount = targetDim.x * targetDim.y;
+    //        mpPrevFrameReservoir = Buffer::createStructured(var["prevFrameReservoir"], reservoirCount,
+    //                                                        ResourceBindFlags::ShaderResource |
+    //                                                            ResourceBindFlags::UnorderedAccess,
+    //                                                        Buffer::CpuAccess::None, nullptr, false);
+    //    }
+    //    var["prevFrameReservoir"] = mpPrevFrameReservoir;
+    //    auto bind = [&](const ChannelDesc &desc)
+    //    {
+    //        if (!desc.texname.empty())
+    //        {
+    //            var[desc.texname] = renderData.getTexture(desc.name);
+    //        }
+    //    };
+    //    for (auto channel : kInputChannels)
+    //        bind(channel);
+    //    for (auto channel : kOutputChannels)
+    //        bind(channel);
+    //
+    //    //    const uint2 targetDim = renderData.getDefaultTextureDims();
+    //
+    //    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
+    //    mpScene->raytrace(pRenderContext, mRtState.pProgram.get(), mRtState.pVars, uint3(targetDim, 1));
+    //    mFrameCount++;
+    // pRenderContext->copyResource(mpPrevFrameReservoir.get(), mpPrevFrameReservoir.get());
+    // renderData holds the requested resources
+    // auto& pTexture = renderData.getTexture("src");
+    mFrameCount++;
+}
+void ReSTIR::traceray(RenderContext *pRenderContext, const RenderData &renderData)
+{
     mRtState.pProgram->addDefine("USE_RESTIR", mUseReSTIR ? "1" : "0");
     mRtState.pProgram->addDefine("RIS_SAMPLE_NUMS", std::to_string(mRISSampleNums));
     mRtState.pProgram->addDefine("TEMPORAL_REUSE_MAX_M", std::to_string(mTemporalReuseMaxM));
@@ -187,13 +245,42 @@ void ReSTIR::execute(RenderContext *pRenderContext, const RenderData &renderData
     mRtState.pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
 
     if (!mRtState.pVars)
-        prepareVars();
+        prepareRtVars();
     FALCOR_ASSERT(mRtState.pVars);
 
     auto var = mRtState.pVars->getRootVar();
+    auto &dict = renderData.getDictionary();
     var["PerFrameCB"]["gFrameCount"] = mFrameCount;
-    var["PerFrameCB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension]
-                                                                                   : 0u;
+    var["PerFrameCB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
+    auto bind = [&](const ChannelDesc &desc)
+    {
+        if (!desc.texname.empty())
+        {
+            var[desc.texname] = renderData.getTexture(desc.name);
+        }
+    };
+    for (auto channel : kInputChannels)
+        bind(channel);
+    const uint2 targetDim = renderData.getDefaultTextureDims();
+    if (!mpIntermediateReservoir)
+    {
+        uint32_t reservoirCount = targetDim.x * targetDim.y;
+        mpIntermediateReservoir = Buffer::createStructured(var["outputReservoir"], reservoirCount,
+                                                           ResourceBindFlags::ShaderResource |
+                                                               ResourceBindFlags::UnorderedAccess,
+                                                           Buffer::CpuAccess::None, nullptr, false);
+    }
+
+    var["outputReservoir"] = mpIntermediateReservoir;
+    for (auto channel : kOutputChannels)
+        bind(channel);
+
+    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
+    mpScene->raytrace(pRenderContext, mRtState.pProgram.get(), mRtState.pVars, uint3(targetDim, 1));
+}
+void ReSTIR::spatioTemporalReuse(RenderContext *pRenderContext, const RenderData &renderData)
+{
+    auto var = mCsState.pVars->getRootVar();
     const uint2 targetDim = renderData.getDefaultTextureDims();
     if (!mpPrevFrameReservoir)
     {
@@ -204,29 +291,8 @@ void ReSTIR::execute(RenderContext *pRenderContext, const RenderData &renderData
                                                         Buffer::CpuAccess::None, nullptr, false);
     }
     var["prevFrameReservoir"] = mpPrevFrameReservoir;
-    auto bind = [&](const ChannelDesc &desc)
-    {
-        if (!desc.texname.empty())
-        {
-            var[desc.texname] = renderData.getTexture(desc.name);
-        }
-    };
-    for (auto channel : kInputChannels)
-        bind(channel);
-    for (auto channel : kOutputChannels)
-        bind(channel);
-
-    //    const uint2 targetDim = renderData.getDefaultTextureDims();
-
-    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
-    mpScene->raytrace(pRenderContext, mRtState.pProgram.get(), mRtState.pVars, uint3(targetDim, 1));
-    mFrameCount++;
-    pRenderContext->copyResource(mpPrevFrameReservoir.get(), mpPrevFrameReservoir.get());
-    // renderData holds the requested resources
-    // auto& pTexture = renderData.getTexture("src");
 }
-
-void ReSTIR::prepareVars()
+void ReSTIR::prepareRtVars()
 {
     FALCOR_ASSERT(mpScene);
     FALCOR_ASSERT(mRtState.pProgram);

@@ -62,8 +62,9 @@ public:
 private:
     ReSTIR(const Dictionary &dict); //  : RenderPass(kInfo) {}
     void parseDictionary(const Dictionary &dict);
-
-    void prepareVars();
+    void prepareRtVars();
+    void traceray(RenderContext *pRenderContext, const RenderData &renderData);
+    void spatioTemporalReuse(RenderContext *pRenderContext, const RenderData &renderData);
 
     Scene::SharedPtr mpScene;
     SampleGenerator::SharedPtr mpSampleGenerator; // GPU上でのサンプル生成器　シェーダーに渡す
@@ -80,10 +81,19 @@ private:
 
     // Buffer::SharedPtr mpPrevFrameBuffer;
     Buffer::SharedPtr mpPrevFrameReservoir;
+    Buffer::SharedPtr mpIntermediateReservoir;
+
     struct
     {
         RtProgram::SharedPtr pProgram;
         RtBindingTable::SharedPtr pBindingTable;
         RtProgramVars::SharedPtr pVars;
     } mRtState;
+
+    struct
+    {
+        ComputeProgram::SharedPtr pProgram;
+        ComputeState::SharedPtr pState;
+        ComputeVars::SharedPtr pVars;
+    }mCsState;
 };

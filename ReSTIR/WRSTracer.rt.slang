@@ -25,7 +25,8 @@ Texture2D<float2> gMVec;
 Texture2D<float> gDepth;
 
 // InOut
-RWStructuredBuffer<RISReservoir> prevFrameReservoir;
+// RWStructuredBuffer<RISReservoir> prevFrameReservoir;
+RWStructuredBuffer<RISReservoir> outputReservoir;
 
 // Output
 RWTexture2D<float4> gOutputColor;
@@ -197,24 +198,25 @@ float3 evalDirectAnalytic(const uint2 pixel, const uint2 screen, const ShadingDa
         //     // TODO: Combine Neighbor reservoirs.
         // }
 
-        if (kUseTemporalReuse)
-        {
-            RISReservoir rprev = prevFrameReservoir[getPrevFramePos1D(pixel, screen)];
-            // clamp previous frame reservoir length.
-            uint max = kUseAutoSetMaxM ? lightCount / 4 : kTemporalReuseMaxM;
-            if (rprev.M > r.M * max)
-            {
-                float ratio = ((float)max * r.M / rprev.M);
-                rprev.wSum *= ratio;
-                rprev.M = max * r.M;
-            }
-            RISReservoir res = RISReservoir();
-            res.update(r.currentSampleId, r.wSum, r.targetPdfSample, randSimple((r.wSum, rprev.targetPdfSample)));
-            res.update(rprev.currentSampleId, rprev.wSum, rprev.targetPdfSample, randSimple((rprev.wSum, r.targetPdfSample)));
-            res.M = r.M + rprev.M;
-            r = res;
-        }
-        prevFrameReservoir[pixel.x + screen.x * pixel.y] = r; // for next frame;
+        // if (kUseTemporalReuse)
+        // {
+        //     RISReservoir rprev = prevFrameReservoir[getPrevFramePos1D(pixel, screen)];
+        //     // clamp previous frame reservoir length.
+        //     uint max = kUseAutoSetMaxM ? lightCount / 4 : kTemporalReuseMaxM;
+        //     if (rprev.M > r.M * max)
+        //     {
+        //         float ratio = ((float)max * r.M / rprev.M);
+        //         rprev.wSum *= ratio;
+        //         rprev.M = max * r.M;
+        //     }
+        //     RISReservoir res = RISReservoir();
+        //     res.update(r.currentSampleId, r.wSum, r.targetPdfSample, randSimple((r.wSum, rprev.targetPdfSample)));
+        //     res.update(rprev.currentSampleId, rprev.wSum, rprev.targetPdfSample, randSimple((rprev.wSum, r.targetPdfSample)));
+        //     res.M = r.M + rprev.M;
+        //     r = res;
+        // }
+        // prevFrameReservoir[pixel.x + screen.x * pixel.y] = r; // for next frame;
+        outputReservoir[pixel.x + screen.x * pixel.y] = r;
         lightIndex = r.currentSampleId;
         invPdf = r.getInvPDF();
     }
