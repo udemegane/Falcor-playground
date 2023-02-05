@@ -23,7 +23,7 @@ struct RISReservoir<S>
     S currentSample;
     float targetPdfSample;
     uint M;
-    __init(S sample)
+    __init(const S sample)
     {
         wSum = 0;
         M = 0;
@@ -32,18 +32,18 @@ struct RISReservoir<S>
         targetPdfSample = 0.f;
     }
     [mutating]
-    bool update(S xi, float wi, float pi, float rand)
+    bool update(const S xi, const float wi, const float pi, const float rand)
     {
         wSum += wi;
         // M += (uint)step(pi, 0.00001);
-        M++;
         bool accept = rand <= wi / wSum;
-        if (accept)
+        if (accept || M == 0)
         {
             currentSample = xi;
 
             targetPdfSample = pi;
         }
+        M++;
         return accept;
     }
 
@@ -72,12 +72,16 @@ static const float kRayMax = FLT_MAX;
 // ReSTIR constant values
 static const bool kUseReSTIR = USE_RESTIR;
 static const uint kRISSampleNums = RIS_SAMPLE_NUMS;
-
 static const bool kUseTemporalReuse = USE_TEMPORAL_REUSE;
-
+static const uint kTemporalReuseMaxM = TEMPORAL_REUSE_MAX_M;
 static const bool kUseSpatialReuse = USE_SPATIAL_REUSE;
 static const uint kSpatialNeigborsNum = 5;
 static const float kSampleRadius = 30.0;
+
+float randSimple(float2 p)
+{
+    return frac(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
+}
 
 // shadow ray strcuture
 struct ShadowRayData
@@ -85,20 +89,22 @@ struct ShadowRayData
     bool visible;
 }
 
-// RISReservoir<S> combineReservoir<S>(RISReservoir<S>[] resArr, uint N, SampleGenerator sg)
-// {
-//     RISReservoir<S> res;
-//     for (uint i = 0; i < N; i++)
-//     {
-//         res.update(resArr[i].currentSample, resArr[i].wSum, sampleNext1D(sg));
-//     }
-//     return res;
-// }
+RISReservoir<S> combineReservoir<S>(const RISReservoir<S> ra, const RISReservoir<S> rb)
+{
+    RISReservoir<S> res;
+    // uint M = 0;
+    res.update(ra.currentSample, ra.wSum, ra.targetPdfSample, randSimple((ra.wSum, ra.targetPdfSample)));
+    // M += ra.M;
+    res.update(rb.currentSample, rb.wSum, rb.targetPdfSample, randSimple((rb.wSum, rb.targetPdfSample)));
+    // M += rb.M;
+    res.M = ra.M + rb.M;
+    return res;
+}
 
 int getPrevFramePos1D(uint2 pixelPos, uint2 screen)
 {
-    float2 motion = gMVec.Load(int3(pixelPos, 0)).xy;
-    return int(motion.x * screen.x + motion.y);
+    uint2 prevPixPos = pixelPos + screen * gMVec[pixelPos];
+    return prevPixPos.x + screen.x * prevPixPos.y;
 }
 
 float3 getPrimaryRayDir(uint2 pixel, uint2 screen, const Camera camera)
@@ -178,7 +184,7 @@ bool traceShadowRay(float3 origin, float3 dir, float distance)
     return rayData.visible;
 }
 
-float3 evalDirectAnalytic(const uint2 pixel, const ShadingData sd, const IBSDF bsdf, SampleGenerator sg)
+float3 evalDirectAnalytic(const uint2 pixel, const uint2 screen, const ShadingData sd, const IBSDF bsdf, SampleGenerator sg)
 {
     const uint lightCount = gScene.getLightCount();
     if (lightCount == 0)
@@ -197,7 +203,7 @@ float3 evalDirectAnalytic(const uint2 pixel, const ShadingData sd, const IBSDF b
 
             AnalyticLightSample ls;
             // Calculate from target distribution Fs*G*Li
-            float3 pi3f = float3(0.f);
+            float3 pi3f = float3(0.000001f);
             if (sampleLight(sd.posW, gScene.getLight(xi), sg, ls))
                 pi3f = bsdf.eval(sd, ls.dir, sg) * ls.Li;
 
@@ -209,23 +215,41 @@ float3 evalDirectAnalytic(const uint2 pixel, const ShadingData sd, const IBSDF b
             float wi = pi * lightCount; // lightCount means invPdf
             r.update(xi, wi, pi, rand.y);
         }
-        if (kUseSpatialReuse)
-        {
-            for (uint i = 0; i < kSpatialNeigborsNum; i++)
-            {
-                float rand = sampleNext1D(sg);
-                float radius = kSampleRadius * rand;
-                float angle = 2.0f * M_PI * frac(sin(gFrameCount * rand));
-                uint2 neighborPos = {
-                    pixel.x + uint(radius * cos(angle)),
-                    pixel.y + uint(radius * sin(angle))
-                };
-            }
-            // TODO: Combine Neighbor reservoirs.
-        }
+        // if (kUseSpatialReuse)
+        // {
+        //     float rand = sampleNext1D(sg);
+        //     for (uint i = 0; i < kSpatialNeigborsNum; i++)
+        //     {
+        //         float radius = kSampleRadius * rand;
+        //         float angle = 2.0f * M_PI * frac(sin(gFrameCount * rand));
+        //         uint2 neighborPos = {
+        //             pixel.x + uint(radius * cos(angle)),
+        //             pixel.y + uint(radius * sin(angle))
+        //         };
+
+        //         rand = randSimple(((float)neighborPos.x / rand, (float)neighborPos.y / rand));
+        //     }
+        //     // TODO: Combine Neighbor reservoirs.
+        // }
+
         if (kUseTemporalReuse)
         {
+            RISReservoir<uint> rprev = prevFrameReservoir[getPrevFramePos1D(pixel, screen)];
+            if (rprev.M > r.M * kTemporalReuseMaxM)
+            {
+                float ratio = ((float)kTemporalReuseMaxM * r.M / rprev.M);
+                rprev.wSum *= ratio;
+                rprev.M = kTemporalReuseMaxM * r.M;
+            }
+            RISReservoir<uint> res = RISReservoir<uint>(0);
+            res.update(rprev.currentSample, rprev.wSum, rprev.targetPdfSample, randSimple((rprev.wSum, r.targetPdfSample)));
+            res.update(r.currentSample, r.wSum, r.targetPdfSample, randSimple((r.wSum, rprev.targetPdfSample)));
+            res.M = r.M + rprev.M; // clamp(rprev.M, 0, r.M * 20);
+            // r.wSum = r.wSum + rprev.wSum * 0.000001 + res.wSum * 0.000001; // コンパイラだます
+            r = res;
+            // r = combineReservoir<uint>(r, prevFrameReservoir[ppos]);
         }
+        prevFrameReservoir[pixel.x + screen.x * pixel.y] = r; // for next frame;
         lightIndex = r.currentSample;
         invPdf = r.getInvPDF();
     }
@@ -277,7 +301,7 @@ float3 tracePath(uint2 pixel, uint2 screen)
         float3 rayOrigin = sd.computeNewRayOrigin();
         // curve primitive消した
 
-        outputColor += bsdf.getProperties(sd).emission + evalDirectAnalytic(pixel, sd, bsdf, sg);
+        outputColor += bsdf.getProperties(sd).emission + evalDirectAnalytic(pixel, screen, sd, bsdf, sg);
 
         // ScatterRayData rayData = ScatterRayData(sg);
         // generateScatterRay(sd, bsdf, rayOrigin, rayData);

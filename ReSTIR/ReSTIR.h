@@ -31,7 +31,8 @@
 
 using namespace Falcor;
 
-class ReSTIR : public RenderPass {
+class ReSTIR : public RenderPass
+{
 public:
     using SharedPtr = std::shared_ptr<ReSTIR>;
 
@@ -59,7 +60,7 @@ public:
     virtual bool onKeyEvent(const KeyboardEvent &keyEvent) override { return false; }
 
 private:
-    ReSTIR(const Dictionary &dict);//  : RenderPass(kInfo) {}
+    ReSTIR(const Dictionary &dict); //  : RenderPass(kInfo) {}
     void parseDictionary(const Dictionary &dict);
 
     void prepareVars();
@@ -68,6 +69,7 @@ private:
     SampleGenerator::SharedPtr mpSampleGenerator; // GPU上でのサンプル生成器　シェーダーに渡す
 
     uint mRISSampleNums = 8;
+    uint mTemporalReuseMaxM = 20;
     bool mUseReSTIR = true;
     bool mUseTemporalReuse = false;
     bool mUseSpatialReuse = false;
@@ -75,9 +77,10 @@ private:
     uint mFrameCount = 0; // 累積フレーム数
     bool mOptionsChanged = false;
 
-    Buffer::SharedPtr mpPrevFrameBuffer; // 前フレームのカラーバッファ
+    // Buffer::SharedPtr mpPrevFrameBuffer;
     Buffer::SharedPtr mpPrevFrameReservoir;
-    struct {
+    struct
+    {
         RtProgram::SharedPtr pProgram;
         RtBindingTable::SharedPtr pBindingTable;
         RtProgramVars::SharedPtr pVars;
