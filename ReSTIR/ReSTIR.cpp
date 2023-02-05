@@ -65,10 +65,10 @@ namespace
     const char kMaxBounces[] = "maxBounces";
     const char kComputeDirect[] = "computeDirect";
     const char kUseImportanceSampling[] = "useImportanceSampling";
-
     const char kRISSampleNums[] = "risSampleNums";
-    const char kTemporalReuseMaxM[] = "temporalReuseMaxM";
     const char kUseReSTIR[] = "useReSTIR";
+    const char kTemporalReuseMaxM[] = "temporalReuseMaxM";
+    const char kAutoSetMaxM[] = "autoSetMaxM";
     const char kUseTemporalReuse[] = "useTemporalReuse";
     const char kUseSpatialReuse[] = "useSpatialReuse";
 }
@@ -102,6 +102,10 @@ void ReSTIR::parseDictionary(const Dictionary &dict)
         {
             mUseReSTIR = v;
         }
+        else if (k == kAutoSetMaxM)
+        {
+            mAutoSetMaxM = v;
+        }
         else if (k == kUseTemporalReuse)
         {
             mUseTemporalReuse = v;
@@ -118,6 +122,7 @@ Dictionary ReSTIR::getScriptingDictionary()
     Dictionary dict;
     dict[kTemporalReuseMaxM] = mTemporalReuseMaxM;
     dict[kRISSampleNums] = mRISSampleNums;
+    dict[kAutoSetMaxM] = mAutoSetMaxM;
     dict[kUseReSTIR] = mUseReSTIR;
     dict[kUseTemporalReuse] = mUseTemporalReuse;
     dict[kUseSpatialReuse] = mUseSpatialReuse;
@@ -173,6 +178,7 @@ void ReSTIR::execute(RenderContext *pRenderContext, const RenderData &renderData
     mRtState.pProgram->addDefine("USE_RESTIR", mUseReSTIR ? "1" : "0");
     mRtState.pProgram->addDefine("RIS_SAMPLE_NUMS", std::to_string(mRISSampleNums));
     mRtState.pProgram->addDefine("TEMPORAL_REUSE_MAX_M", std::to_string(mTemporalReuseMaxM));
+    mRtState.pProgram->addDefine("USE_AUTO_SET_MAX_M", mAutoSetMaxM ? "1" : "0");
     mRtState.pProgram->addDefine("USE_TEMPORAL_REUSE", (mUseTemporalReuse && mFrameCount != 0) ? "1" : "0");
     mRtState.pProgram->addDefine("USE_SPATIAL_REUSE", mUseSpatialReuse ? "1" : "0");
 
@@ -273,6 +279,7 @@ void ReSTIR::renderUI(Gui::Widgets &widget)
     bool dirty = false;
     dirty |= widget.var("M (Importance Resampling Count)", mRISSampleNums, 1u, 100u);
     dirty |= widget.var("ClampMaxM", mTemporalReuseMaxM, 1u, 100u);
+    dirty |= widget.checkbox("Auto Set Max M", mAutoSetMaxM);
     dirty |= widget.checkbox("Use WRS", mUseReSTIR);
     dirty |= widget.checkbox("Use Temporal Reuse", mUseTemporalReuse);
     dirty |= widget.checkbox("Use Spatial Reuse", mUseSpatialReuse);

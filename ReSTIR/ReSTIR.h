@@ -70,6 +70,7 @@ private:
 
     uint mRISSampleNums = 8;
     uint mTemporalReuseMaxM = 20;
+    bool mAutoSetMaxM = true;
     bool mUseReSTIR = true;
     bool mUseTemporalReuse = false;
     bool mUseSpatialReuse = false;

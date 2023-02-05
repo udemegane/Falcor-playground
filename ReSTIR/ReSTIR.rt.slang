@@ -74,6 +74,7 @@ static const bool kUseReSTIR = USE_RESTIR;
 static const uint kRISSampleNums = RIS_SAMPLE_NUMS;
 static const bool kUseTemporalReuse = USE_TEMPORAL_REUSE;
 static const uint kTemporalReuseMaxM = TEMPORAL_REUSE_MAX_M;
+static const bool kUseAutoSetMaxM = USE_AUTO_SET_MAX_M;
 static const bool kUseSpatialReuse = USE_SPATIAL_REUSE;
 static const uint kSpatialNeigborsNum = 5;
 static const float kSampleRadius = 30.0;
@@ -235,11 +236,12 @@ float3 evalDirectAnalytic(const uint2 pixel, const uint2 screen, const ShadingDa
         if (kUseTemporalReuse)
         {
             RISReservoir<uint> rprev = prevFrameReservoir[getPrevFramePos1D(pixel, screen)];
-            if (rprev.M > r.M * kTemporalReuseMaxM)
+            uint max = kUseAutoSetMaxM ? lightCount / 4 : kTemporalReuseMaxM;
+            if (rprev.M > r.M * max)
             {
-                float ratio = ((float)kTemporalReuseMaxM * r.M / rprev.M);
+                float ratio = ((float)max * r.M / rprev.M);
                 rprev.wSum *= ratio;
-                rprev.M = kTemporalReuseMaxM * r.M;
+                rprev.M = max * r.M;
             }
             RISReservoir<uint> res = RISReservoir<uint>(0);
             res.update(r.currentSample, r.wSum, r.targetPdfSample, randSimple((r.wSum, rprev.targetPdfSample)));
