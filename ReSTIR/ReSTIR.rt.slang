@@ -210,7 +210,7 @@ float3 evalDirectAnalytic(const uint2 pixel, const uint2 screen, const ShadingDa
             // Calculate weight proportional to p(xi)/q(xi).
             // q() is uniform distribution, Always Return 1/LightCount.
             // p(xi) is Fs*G*Li. (exclude V())
-            // So weight us pi * lightCount.
+            // So weight is pi * lightCount.
             float pi = length(pi3f);
             float wi = pi * lightCount; // lightCount means invPdf
             r.update(xi, wi, pi, rand.y);
@@ -242,8 +242,8 @@ float3 evalDirectAnalytic(const uint2 pixel, const uint2 screen, const ShadingDa
                 rprev.M = kTemporalReuseMaxM * r.M;
             }
             RISReservoir<uint> res = RISReservoir<uint>(0);
-            res.update(rprev.currentSample, rprev.wSum, rprev.targetPdfSample, randSimple((rprev.wSum, r.targetPdfSample)));
             res.update(r.currentSample, r.wSum, r.targetPdfSample, randSimple((r.wSum, rprev.targetPdfSample)));
+            res.update(rprev.currentSample, rprev.wSum, rprev.targetPdfSample, randSimple((rprev.wSum, r.targetPdfSample)));
             res.M = r.M + rprev.M; // clamp(rprev.M, 0, r.M * 20);
             // r.wSum = r.wSum + rprev.wSum * 0.000001 + res.wSum * 0.000001; // コンパイラだます
             r = res;
