@@ -40,7 +40,7 @@ static const bool kUseTemporalReuse = USE_TEMPORAL_REUSE;
 static const uint kTemporalReuseMaxM = TEMPORAL_REUSE_MAX_M;
 static const bool kUseAutoSetMaxM = USE_AUTO_SET_MAX_M;
 static const bool kUseSpatialReuse = USE_SPATIAL_REUSE;
-static const bool kUseUnbiased = USE_UNBIASED;
+static const bool kUseFixWeight = USE_FIXWEIGHT;
 
 int getPrevFramePos1D(uint2 pixelPos, uint2 screen)
 {
@@ -119,7 +119,7 @@ float3 spatioTemporalTrace(uint2 pixel, uint2 screen, ShadingData sd, IBSDF bsdf
             {
                 CombinedReservoirFactory crf = CombinedReservoirFactory();
                 crf.update(r);
-                if (kUseUnbiased)
+                if (false /*kUseFixWeight*/)
                 {
                     AnalyticLightSample ls;
                     float3 pi3f = float3(0.f);
@@ -139,6 +139,8 @@ float3 spatioTemporalTrace(uint2 pixel, uint2 screen, ShadingData sd, IBSDF bsdf
         }
     }
 
+    prevFrameReservoir[pixel.x + gScreen.x * pixel.y] = r; // for next frame;
+
     if (kUseSpatialReuse)
     {
         CombinedReservoirFactory crf = CombinedReservoirFactory();
@@ -146,6 +148,8 @@ float3 spatioTemporalTrace(uint2 pixel, uint2 screen, ShadingData sd, IBSDF bsdf
 
         for (uint i = 0; i < kSpatialNeigborsNum; i++)
         {
+            rand = randSimple((r.targetPdfSample.x * rand * 3.0, r.wSum));
+            // Select Negihbor pixel.
             float radius = kSampleRadius * rand;
             float angle = 2.0f * M_PI * frac(sin(gFrameCount * rand));
             uint2 neighborPos = {
@@ -153,9 +157,15 @@ float3 spatioTemporalTrace(uint2 pixel, uint2 screen, ShadingData sd, IBSDF bsdf
                 clamp(pixel.y + uint(radius * sin(angle)), 0, screen.y)
             };
 
+            // Skip loop when neighbor pixel is too far.
+            if (gDepth[pixel] > 1.05 * gDepth[neighborPos] || gDepth[pixel] < 0.95 * gDepth[neighborPos])
+            {
+                continue;
+            }
+            // Combine Reservoirs.
             {
                 RISReservoir rn = intermediateReservoir[neighborPos.x + screen.x * neighborPos.y];
-                if (kUseUnbiased)
+                if (kUseFixWeight)
                 {
                     float3 pi3f = float3(0.f);
                     AnalyticLightSample ls;
@@ -174,7 +184,7 @@ float3 spatioTemporalTrace(uint2 pixel, uint2 screen, ShadingData sd, IBSDF bsdf
         r = crf.getCombinedReservoir();
     }
 
-    prevFrameReservoir[pixel.x + gScreen.x * pixel.y] = r; // for next frame;
+    // prevFrameReservoir[pixel.x + gScreen.x * pixel.y] = r; // for next frame;
 
     uint lightIndex = r.currentSampleId;
     float invPdf = r.getInvPDF();

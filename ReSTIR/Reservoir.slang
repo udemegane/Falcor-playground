@@ -15,7 +15,6 @@ struct RISReservoir
     bool update(const uint xi, const float wi, const float3 pi, const float rand)
     {
         wSum += wi;
-        // M += (uint)step(pi, 0.00001);
         bool accept = rand <= wi / wSum;
         if (accept || M == 0)
         {
@@ -49,7 +48,7 @@ struct CombinedReservoirFactory
         master = RISReservoir();
         M = 0;
     }
-    // Unbias Update
+    // Fix Weight
     [mutating]
     bool update(RISReservoir ri, float3 newPdfSample)
     {
@@ -57,7 +56,6 @@ struct CombinedReservoirFactory
         float fixedW = ri.wSum * length(newPdfSample) / length(ri.targetPdfSample);
         return master.update(ri.currentSampleId, fixedW, newPdfSample, randSimple((ri.targetPdfSample.x, ri.wSum)));
     }
-    // Biased Update
     [mutating]
     bool update(RISReservoir ri)
     {
