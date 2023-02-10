@@ -9,7 +9,6 @@ struct RISReservoir
         wSum = 0;
         M = 0;
         currentSampleId = 0;
-        // pTarget = float3(0.f);
         targetPdfSample = float3(0.f);
     }
     [mutating]

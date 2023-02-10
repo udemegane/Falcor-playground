@@ -4,7 +4,6 @@ __exported import Scene.HitInfo;
 __exported import Scene.Shading;
 import Utils.Math.MathHelpers;
 import Rendering.Materials.TexLODHelpers;
-import Params;
 import Utils.Debug.PixelDebug;
 
 ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const float3 rayDir, const ITextureSampler lod)

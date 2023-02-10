@@ -64,11 +64,11 @@ private:
 
     void prepareRtVars();
 
-    void prepareCsVars();
+    void prepareCsVars(ComputeProgram::SharedPtr &pProgram, ComputeVars::SharedPtr &pVars);
 
     void traceray(RenderContext *pRenderContext, const RenderData &renderData);
 
-    void traceRay(RenderContext *pRenderContext, const RenderData &renderData);
+    void execWRS(RenderContext *pRenderContext, const RenderData &renderData);
 
     void spatioTemporalReuse(RenderContext *pRenderContext, const RenderData &renderData);
 
@@ -79,14 +79,13 @@ private:
     uint mTemporalReuseMaxM = 20;
     bool mAutoSetMaxM = true;
     bool mUseReSTIR = true;
-    bool mUseTemporalReuse = false;
+    bool mUseTemporalReuse = true;
     bool mUseSpatialReuse = false;
 
     uint mFrameCount = 0; // 累積フレーム数
     bool mOptionsChanged = false;
 
     Texture::SharedPtr mpInterColor;
-    // Buffer::SharedPtr mpPrevFrameBuffer;
     Buffer::SharedPtr mpPrevFrameReservoir;
     Buffer::SharedPtr mpIntermediateReservoir;
 
@@ -97,12 +96,17 @@ private:
     } mRtState;
 
     struct {
-        ComputeProgram::SharedPtr pProgram;
-        ComputeState::SharedPtr pState;
-        ComputeVars::SharedPtr pVars;
+        ComputeProgram::SharedPtr pProgram= nullptr;
+        ComputeState::SharedPtr pState = nullptr;
+        ComputeVars::SharedPtr pVars = nullptr;
     } mCsState;
 
-//    ComputePass::SharedPtr mpTracePass;
+    struct {
+        ComputeProgram::SharedPtr pProgram= nullptr;
+        ComputeState::SharedPtr pState = nullptr;
+        ComputeVars::SharedPtr pVars = nullptr;
+    } mWRSState;
+
 //    ComputePass::SharedPtr mpSpatioTemporalReusePass;
 
 };

@@ -12,6 +12,7 @@ import Rendering.Materials.StandardMaterial;
 import Rendering.Utils.PixelStats;
 import Rendering.Lights.LightHelpers;
 import Reservoir;
+import RaytraceUtils;
 
 cbuffer PerFrameCB
 {
@@ -33,7 +34,7 @@ RWTexture2D<float4> gOutputColor;
 #define is_valid(name) (is_valid_##name != 0)
 
 static const uint kSpatialNeigborsNum = 5;
-static const float kSampleRadius = 30.0;
+static const float kSampleRadius = 5.0;
 static const bool kUseReSTIR = USE_RESTIR;
 static const bool kUseTemporalReuse = USE_TEMPORAL_REUSE;
 static const uint kTemporalReuseMaxM = TEMPORAL_REUSE_MAX_M;
@@ -63,57 +64,6 @@ float randSimple(float2 p)
     return frac(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
 }
 
-ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const float3 rayDir, const ITextureSampler lod)
-{
-    VertexData vertexData = {};
-    uint materialID = {};
-
-// プリプロセッサかますと補完が壊れる
-#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_TRIANGLE_MESH)
-    if (hit.getType() == HitType::Triangle)
-    {
-        gScene;
-        const TriangleHit th = hit.getTriangleHit();
-        vertexData = gScene.getVertexData(th);
-        materialID = gScene.getMaterialID(th.instanceID);
-    }
-#endif
-
-#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_DISPLACED_TRIANGLE_MESH)
-    if (hit.getType() == HitType::DisplacedTriangle)
-    {
-        const DisplacedTriangleHit dth = hit.getDisplacedTriangleHit();
-        vertexData = gScene.getVertexData(dth, -rayDir);
-        materialID = gScene.getMaterialID(dth.instanceID);
-    }
-#endif
-
-#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_CURVE)
-    if (hit.getType() == HitType::Curve)
-    {
-        const CurveHit ch = hit.getCurveHit();
-        vertexData = gScene.getVertexDataFromCurve(ch);
-        materialID = gScene.getMaterialID(ch.instanceID);
-    }
-#endif
-
-#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_SDF_GRID)
-    if (hit.getType() == HitType::SDFGrid)
-    {
-        const SDFGridHit sh = hit.getSDFGridHit();
-        vertexData = gScene.getVertexDataFromSDFGrid(sh, rayOrigin, rayDir);
-        materialID = gScene.getMaterialID(sh.instanceID);
-    }
-#endif
-
-#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_CUSTOM)
-    {
-    }
-#endif
-    ShadingData sd = gScene.materials.prepareShadingData(vertexData, materialID, -rayDir, lod);
-    return sd;
-}
-
 bool traceVisibilityRay(const Ray ray)
 {
     logTraceRay(PixelStatsRayType::Visibility);
@@ -134,8 +84,6 @@ void finalShading(uint2 pixel, uint2 screen)
         ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
         let bsdf = gScene.materials.getBSDF(sd, lod);
         SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
-        // for (uint i = 0; i < gPRNGDimension; i++)
-        //     sampleNext1D(sg);
 
         float3 rayOrigin = sd.computeNewRayOrigin();
         // curve primitive消した
@@ -149,73 +97,82 @@ void finalShading(uint2 pixel, uint2 screen)
 float3 spatioTemporalTrace(uint2 pixel, uint2 screen, ShadingData sd, IBSDF bsdf, SampleGenerator sg)
 {
     const uint lightCount = gScene.getLightCount();
-    if (kUseReSTIR)
+    RISReservoir r = intermediateReservoir[pixel.x + gScreen.x * pixel.y];
+    float rand = randSimple((r.targetPdfSample.x, r.targetPdfSample.z));
+    if (kUseTemporalReuse)
     {
-        RISReservoir r = intermediateReservoir[pixel.x + gScreen.x * pixel.y];
-        float rand = sampleNext1D(sg);
-        if (kUseTemporalReuse)
-        {
-            RISReservoir rprev = prevFrameReservoir[getPrevFramePos1D(pixel, gScreen)];
+        RISReservoir rprev = prevFrameReservoir[getPrevFramePos1D(pixel, gScreen)];
 
-            // clamp previous frame reservoir length.
-            uint max = kUseAutoSetMaxM ? lightCount / 4 : kTemporalReuseMaxM;
-            if (rprev.M > r.M * max)
-            {
-                float ratio = ((float)max * r.M / rprev.M);
-                rprev.wSum *= ratio;
-                rprev.M = max * r.M;
-            }
-            RISReservoir res = RISReservoir();
-            res.update(r.currentSampleId, r.wSum, r.targetPdfSample, randSimple((r.wSum, rprev.targetPdfSample.x)));
-            res.update(rprev.currentSampleId, rprev.wSum, rprev.targetPdfSample, randSimple((rprev.wSum, r.targetPdfSample.y)));
-            res.M = r.M + rprev.M;
-            r = res;
-        }
-        if (kUseSpatialReuse)
+        // clamp previous frame reservoir length.
+        uint max = kUseAutoSetMaxM ? lightCount / 4 : kTemporalReuseMaxM;
+        if (rprev.M > r.M * max)
         {
-            for (uint i = 0; i < kSpatialNeigborsNum; i++)
-            {
-                float radius = kSampleRadius * rand;
-                float angle = 2.0f * M_PI * frac(sin(gFrameCount * rand));
-                uint2 neighborPos = {
-                    pixel.x + uint(radius * cos(angle)),
-                    pixel.y + uint(radius * sin(angle))
-                };
+            float ratio = ((float)max * r.M / rprev.M);
+            rprev.wSum *= ratio;
+            rprev.M = max * r.M;
+        }
+        RISReservoir res = RISReservoir();
+        res.update(r.currentSampleId, r.wSum, r.targetPdfSample, randSimple((r.wSum, rprev.targetPdfSample.x)));
+        res.update(rprev.currentSampleId, rprev.wSum, rprev.targetPdfSample, randSimple((rprev.wSum, r.targetPdfSample.y)));
+        res.M = r.M + rprev.M;
+        r = res;
+    }
 
-                rand = randSimple(((float)neighborPos.x / rand, (float)neighborPos.y / rand));
-            }
-            // TODO: combine reservoirs;
-        }
-        prevFrameReservoir[pixel.x + gScreen.x * pixel.y] = r; // for next frame;
-        uint lightIndex = r.currentSampleId;
-        float invPdf = r.getInvPDF();
-        AnalyticLightSample ls;
-        const uint lobeTypes = bsdf.getLobes(sd);
-        if (dot(ls.dir, sd.N) <= kMinCosTheta && !(lobeTypes & (uint)LobeType::Transmission))
-            return float3(0.f);
-        if (dot(ls.dir, sd.N) >= -kMinCosTheta && !(lobeTypes & (uint)LobeType::Reflection))
-            return float3(0.f);
-        float3 n = dot(sd.faceN, ls.dir) >= 0.f ? sd.faceN : -sd.faceN;
-        float3 origin = computeRayOrigin(sd.posW, n);
-        Ray ray = Ray(origin, ls.dir, 0.0f, ls.distance);
-        if (traceVisibilityRay(ray))
+    if (kUseSpatialReuse)
+    {
+        RISReservoir res = RISReservoir();
+        res.update(r.currentSampleId, r.wSum, r.currentSampleId, rand);
+        uint M = r.M;
+        for (uint i = 0; i < kSpatialNeigborsNum; i++)
         {
-            return r.targetPdfSample * invPdf;
+            float radius = kSampleRadius * rand;
+            float angle = 2.0f * M_PI * frac(sin(gFrameCount * rand));
+            uint2 neighborPos = {
+                clamp(pixel.x + uint(radius * cos(angle)), 0, screen.x),
+                clamp(pixel.y + uint(radius * sin(angle)), 0, screen.y)
+            };
+
+            RISReservoir rn = intermediateReservoir[neighborPos.x + screen.x * neighborPos.y];
+            float3 pi3f = float3(0.0000001f);
+            AnalyticLightSample ls;
+            if (sampleLight(sd.posW, gScene.getLight(rn.currentSampleId), sg, ls))
+                pi3f = bsdf.eval(sd, ls.dir, sg) * ls.Li;
+            float fixedW = rn.wSum * length(pi3f) / length(rn.targetPdfSample);
+            res.update(rn.currentSampleId, fixedW, pi3f, randSimple((rn.wSum, r.targetPdfSample.y)));
+            M += rn.M;
         }
-        else
-        {
-            return float3(0.f);
-        }
+        res.M = M;
+        r = res;
+    }
+    AnalyticLightSample ls;
+    if (!sampleLight(sd.posW, gScene.getLight(r.currentSampleId), sg, ls))
+        return float3(0.0f, 0.f, 0.f);
+    r.targetPdfSample = bsdf.eval(sd, ls.dir, sg) * ls.Li;
+
+    prevFrameReservoir[pixel.x + gScreen.x * pixel.y] = r; // for next frame;
+    uint lightIndex = r.currentSampleId;
+    float invPdf = r.getInvPDF();
+    const uint lobeTypes = bsdf.getLobes(sd);
+    if (dot(ls.dir, sd.N) <= kMinCosTheta && !(lobeTypes & (uint)LobeType::Transmission))
+        return float3(0.f);
+    if (dot(ls.dir, sd.N) >= -kMinCosTheta && !(lobeTypes & (uint)LobeType::Reflection))
+        return float3(0.f);
+    float3 n = dot(sd.faceN, ls.dir) >= 0.f ? sd.faceN : -sd.faceN;
+    float3 origin = computeRayOrigin(sd.posW, n);
+    Ray ray = Ray(origin, ls.dir, 0.0f, ls.distance);
+    if (traceVisibilityRay(ray))
+    {
+        return r.targetPdfSample * invPdf;
     }
     else
     {
-        // TODO: impl random pdf sampling.
-        return float3(0.f);
+        return float3(0.0f, 0.f, 0.f);
     }
 }
 
 [numthreads(16, 16, 1)]
 void main(uint3 dispatchThreadId: SV_DispatchThreadID)
 {
-    finalShading(dispatchThreadId.xy, gScreen);
+    if (kUseReSTIR)
+        finalShading(dispatchThreadId.xy, gScreen);
 }
