@@ -80,7 +80,8 @@ private:
     bool mAutoSetMaxM = true;
     bool mUseReSTIR = true;
     bool mUseTemporalReuse = true;
-    bool mUseSpatialReuse = false;
+    bool mUseSpatialReuse = true;
+    bool mUseUnbiased = true;
 
     uint mFrameCount = 0; // 累積フレーム数
     bool mOptionsChanged = false;
