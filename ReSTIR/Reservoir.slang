@@ -33,3 +33,41 @@ struct RISReservoir
         return wSum / (M * length(targetPdfSample));
     }
 }
+
+float randSimple(float2 p)
+{
+    return frac(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
+}
+
+struct CombinedReservoirFactory
+{
+
+    RISReservoir master;
+    uint M;
+    __init()
+    {
+        master = RISReservoir();
+        M = 0;
+    }
+    // Unbias Update
+    [mutating]
+    bool update(RISReservoir ri, float3 newPdfSample)
+    {
+        M += ri.M;
+        float fixedW = ri.wSum * length(newPdfSample) / length(ri.targetPdfSample);
+        return master.update(ri.currentSampleId, fixedW, newPdfSample, randSimple((ri.targetPdfSample.x, ri.wSum)));
+    }
+    // Biased Update
+    [mutating]
+    bool update(RISReservoir ri)
+    {
+        M += ri.M;
+        return master.update(ri.currentSampleId, ri.wSum, ri.targetPdfSample, randSimple((ri.targetPdfSample.x, ri.wSum)));
+    }
+    [mutating]
+    RISReservoir getCombinedReservoir()
+    {
+        master.M = M;
+        return master;
+    }
+}
