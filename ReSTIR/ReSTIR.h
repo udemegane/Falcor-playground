@@ -31,7 +31,8 @@
 
 using namespace Falcor;
 
-class ReSTIR : public RenderPass {
+class ReSTIR : public RenderPass
+{
 public:
     using SharedPtr = std::shared_ptr<ReSTIR>;
 
@@ -83,7 +84,7 @@ private:
     bool mUseSpatialReuse = true;
     uint mSpatialRadius = 5;
     uint mSpatialNeighbors = 4;
-    bool mUseUnbiased = true;
+    bool mUseFixWeight = true;
 
     uint mFrameCount = 0; // 累積フレーム数
     bool mOptionsChanged = false;
@@ -92,24 +93,26 @@ private:
     Buffer::SharedPtr mpPrevFrameReservoir;
     Buffer::SharedPtr mpIntermediateReservoir;
 
-    struct {
+    struct
+    {
         RtProgram::SharedPtr pProgram;
         RtBindingTable::SharedPtr pBindingTable;
         RtProgramVars::SharedPtr pVars;
     } mRtState;
 
-    struct {
-        ComputeProgram::SharedPtr pProgram= nullptr;
+    struct
+    {
+        ComputeProgram::SharedPtr pProgram = nullptr;
         ComputeState::SharedPtr pState = nullptr;
         ComputeVars::SharedPtr pVars = nullptr;
     } mCsState;
 
-    struct {
-        ComputeProgram::SharedPtr pProgram= nullptr;
+    struct
+    {
+        ComputeProgram::SharedPtr pProgram = nullptr;
         ComputeState::SharedPtr pState = nullptr;
         ComputeVars::SharedPtr pVars = nullptr;
     } mWRSState;
 
-//    ComputePass::SharedPtr mpSpatioTemporalReusePass;
-
+    //    ComputePass::SharedPtr mpSpatioTemporalReusePass;
 };
