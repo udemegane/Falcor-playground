@@ -2,7 +2,7 @@ struct RISReservoir
 {
     float wSum;
     uint currentSampleId;
-    float targetPdfSample;
+    float3 targetPdfSample;
     uint M;
     __init()
     {
@@ -10,10 +10,10 @@ struct RISReservoir
         M = 0;
         currentSampleId = 0;
         // pTarget = float3(0.f);
-        targetPdfSample = 0.f;
+        targetPdfSample = float3(0.f);
     }
     [mutating]
-    bool update(const uint xi, const float wi, const float pi, const float rand)
+    bool update(const uint xi, const float wi, const float3 pi, const float rand)
     {
         wSum += wi;
         // M += (uint)step(pi, 0.00001);
@@ -30,6 +30,7 @@ struct RISReservoir
 
     float getInvPDF()
     {
-        return wSum / (M * targetPdfSample);
+
+        return wSum / (M * length(targetPdfSample));
     }
 }

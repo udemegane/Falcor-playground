@@ -170,7 +170,7 @@ float3 evalDirectAnalytic(const uint2 pixel, const uint2 screen, const ShadingDa
             // So weight is pi * lightCount.
             float pi = length(pi3f);
             float wi = pi * lightCount; // lightCount means invPdf
-            r.update(xi, wi, pi, rand.y);
+            r.update(xi, wi, pi3f, rand.y);
         }
         // if (kUseSpatialReuse)
         // {

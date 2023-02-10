@@ -31,8 +31,7 @@
 
 using namespace Falcor;
 
-class ReSTIR : public RenderPass
-{
+class ReSTIR : public RenderPass {
 public:
     using SharedPtr = std::shared_ptr<ReSTIR>;
 
@@ -62,9 +61,15 @@ public:
 private:
     ReSTIR(const Dictionary &dict); //  : RenderPass(kInfo) {}
     void parseDictionary(const Dictionary &dict);
+
     void prepareRtVars();
+
     void prepareCsVars();
+
     void traceray(RenderContext *pRenderContext, const RenderData &renderData);
+
+    void traceRay(RenderContext *pRenderContext, const RenderData &renderData);
+
     void spatioTemporalReuse(RenderContext *pRenderContext, const RenderData &renderData);
 
     Scene::SharedPtr mpScene;
@@ -85,17 +90,19 @@ private:
     Buffer::SharedPtr mpPrevFrameReservoir;
     Buffer::SharedPtr mpIntermediateReservoir;
 
-    struct
-    {
+    struct {
         RtProgram::SharedPtr pProgram;
         RtBindingTable::SharedPtr pBindingTable;
         RtProgramVars::SharedPtr pVars;
     } mRtState;
 
-    struct
-    {
+    struct {
         ComputeProgram::SharedPtr pProgram;
         ComputeState::SharedPtr pState;
         ComputeVars::SharedPtr pVars;
-    }mCsState;
+    } mCsState;
+
+//    ComputePass::SharedPtr mpTracePass;
+//    ComputePass::SharedPtr mpSpatioTemporalReusePass;
+
 };
