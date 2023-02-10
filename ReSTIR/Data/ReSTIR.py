@@ -6,7 +6,7 @@ def render_graph_ReSTIR():
     loadRenderPassLibrary('GBuffer.dll')
     loadRenderPassLibrary('SVGFPass.dll')
     loadRenderPassLibrary('ReSTIR.dll')
-    ReSTIR = createPass('ReSTIR', {'risSampleNums': 8, 'useReSTIR': True, 'useTemporalReuse': False, 'useSpatialReuse': False})
+    ReSTIR = createPass('ReSTIR', {'risSampleNums': 8, 'useReSTIR': True, 'useTemporalReuse': False, 'useSpatialReuse': True})
     g.addPass(ReSTIR, 'ReSTIR')
     VBufferRT = createPass('VBufferRT', {'outputSize': IOSize.Default, 'samplePattern': SamplePattern.Center, 'sampleCount': 8, 'useAlphaTest': True, 'adjustShadingNormals': True, 'forceCullMode': False, 'cull': CullMode.CullBack, 'useTraceRayInline': False, 'useDOF': True})
     g.addPass(VBufferRT, 'VBufferRT')

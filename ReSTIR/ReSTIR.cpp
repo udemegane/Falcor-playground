@@ -75,6 +75,8 @@ namespace {
     const char kAutoSetMaxM[] = "autoSetMaxM";
     const char kUseTemporalReuse[] = "useTemporalReuse";
     const char kUseSpatialReuse[] = "useSpatialReuse";
+    const char kSpatialRadius[] = "spatialRadius";
+    const char kSpatialNeighbors[] = "spatialNeighbors";
     const char kUseUnbiased[] = "useUnbiased";
 }
 
@@ -106,6 +108,10 @@ void ReSTIR::parseDictionary(const Dictionary &dict) {
             mUseTemporalReuse = v;
         } else if (k == kUseSpatialReuse) {
             mUseSpatialReuse = v;
+        }else if(k==kSpatialRadius){
+            mSpatialRadius = v;
+}else if(k==kSpatialNeighbors){
+            mSpatialNeighbors = v;
         } else if(k==kUseUnbiased){
             mUseUnbiased = v;
         }
@@ -120,6 +126,8 @@ Dictionary ReSTIR::getScriptingDictionary() {
     dict[kUseReSTIR] = mUseReSTIR;
     dict[kUseTemporalReuse] = mUseTemporalReuse;
     dict[kUseSpatialReuse] = mUseSpatialReuse;
+    dict[kSpatialRadius] = mSpatialRadius;
+    dict[kSpatialNeighbors] = mSpatialNeighbors;
     dict[kUseUnbiased]=mUseUnbiased;
     return dict;
 }
@@ -264,6 +272,8 @@ void ReSTIR::spatioTemporalReuse(RenderContext *pRenderContext, const RenderData
     mCsState.pProgram->addDefine("USE_AUTO_SET_MAX_M", mAutoSetMaxM ? "1" : "0");
     mCsState.pProgram->addDefine("USE_TEMPORAL_REUSE", (mUseTemporalReuse && mFrameCount != 0) ? "1" : "0");
     mCsState.pProgram->addDefine("USE_SPATIAL_REUSE", mUseSpatialReuse ? "1" : "0");
+    mCsState.pProgram->addDefine("SPATIAL_RADIUS", std::to_string(mSpatialRadius));
+    mCsState.pProgram->addDefine("SPATIAL_NEIGHBORS", std::to_string(mSpatialNeighbors));
     mCsState.pProgram->addDefine("USE_UNBIASED", mUseUnbiased ? "1" : "0");
 
     mCsState.pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
@@ -382,9 +392,12 @@ void ReSTIR::renderUI(Gui::Widgets &widget) {
     dirty |= widget.var("ClampMaxM", mTemporalReuseMaxM, 1u, 100u);
     dirty |= widget.checkbox("Auto Set Max M", mAutoSetMaxM);
     dirty |= widget.checkbox("Use WRS", mUseReSTIR);
+    dirty |= widget.checkbox("Use Unbiased Reuse", mUseUnbiased);
     dirty |= widget.checkbox("Use Temporal Reuse", mUseTemporalReuse);
     dirty |= widget.checkbox("Use Spatial Reuse", mUseSpatialReuse);
-    dirty |= widget.checkbox("Use Unbiased Reuse", mUseUnbiased);
+    dirty |= widget.var("Spatial Radius", mSpatialRadius, 1u, 30u);
+    dirty |= widget.var("Spatial Neighbors", mSpatialNeighbors, 1u, 30u);
+
     // If rendering options that modify the output have changed, set flag to indicate that.
     // In execute() we will pass the flag to other passes for reset of temporal data etc.
     if (dirty) {

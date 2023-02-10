@@ -81,6 +81,8 @@ private:
     bool mUseReSTIR = true;
     bool mUseTemporalReuse = true;
     bool mUseSpatialReuse = true;
+    uint mSpatialRadius = 5;
+    uint mSpatialNeighbors = 4;
     bool mUseUnbiased = true;
 
     uint mFrameCount = 0; // 累積フレーム数

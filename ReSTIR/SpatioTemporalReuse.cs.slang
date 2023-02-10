@@ -33,8 +33,8 @@ RWTexture2D<float4> gOutputColor;
 
 #define is_valid(name) (is_valid_##name != 0)
 
-static const uint kSpatialNeigborsNum = 2;
-static const float kSampleRadius = 10.0;
+static const uint kSpatialNeigborsNum = 4;
+static const float kSampleRadius = 5.0;
 static const bool kUseReSTIR = USE_RESTIR;
 static const bool kUseTemporalReuse = USE_TEMPORAL_REUSE;
 static const uint kTemporalReuseMaxM = TEMPORAL_REUSE_MAX_M;
@@ -45,7 +45,11 @@ static const bool kUseUnbiased = USE_UNBIASED;
 int getPrevFramePos1D(uint2 pixelPos, uint2 screen)
 {
     uint2 prevPixPos = pixelPos + uint2(screen * gMVec[pixelPos]);
-    return prevPixPos.x + screen.x * prevPixPos.y;
+    int prevPixPos1D = prevPixPos.x + screen.x * prevPixPos.y;
+    if (prevPixPos1D < 0 || prevPixPos1D > screen.x * screen.y)
+        return -1;
+    else
+        return prevPixPos1D;
 }
 
 float3 getPrimaryRayDir(uint2 pixel, uint2 screen, const Camera camera)
@@ -95,39 +99,51 @@ float3 spatioTemporalTrace(uint2 pixel, uint2 screen, ShadingData sd, IBSDF bsdf
     const uint lightCount = gScene.getLightCount();
     RISReservoir r = intermediateReservoir[pixel.x + gScreen.x * pixel.y];
     float rand = randSimple((r.targetPdfSample.x, r.targetPdfSample.z));
+
     if (kUseTemporalReuse)
     {
-        RISReservoir rprev = prevFrameReservoir[getPrevFramePos1D(pixel, gScreen)];
+        int prevPixel = getPrevFramePos1D(pixel, gScreen);
+        if (prevPixel != -1)
+        {
+            RISReservoir rprev = prevFrameReservoir[prevPixel];
 
-        // clamp previous frame reservoir length.
-        uint max = kUseAutoSetMaxM ? lightCount / 4 : kTemporalReuseMaxM;
-        if (rprev.M > r.M * max)
-        {
-            float ratio = ((float)max * r.M / rprev.M);
-            rprev.wSum *= ratio;
-            rprev.M = max * r.M;
-        }
-        // combine reservoirs
-        {
-            RISReservoir res = RISReservoir();
-            res.update(r.currentSampleId, r.wSum, r.targetPdfSample, randSimple((r.wSum, rprev.targetPdfSample.x)));
-            res.update(rprev.currentSampleId, rprev.wSum, rprev.targetPdfSample, randSimple((rprev.wSum, r.targetPdfSample.y)));
-            res.M = r.M + rprev.M;
-            r = res;
+            // clamp previous frame reservoir length.
+            uint max = kUseAutoSetMaxM ? lightCount / 4 : kTemporalReuseMaxM;
+            if (rprev.M > r.M * max)
+            {
+                float ratio = ((float)max * r.M / rprev.M);
+                rprev.wSum *= ratio;
+                rprev.M = max * r.M;
+            }
+            // combine reservoirs
+            {
+                CombinedReservoirFactory crf = CombinedReservoirFactory();
+                crf.update(r);
+                if (kUseUnbiased)
+                {
+                    AnalyticLightSample ls;
+                    float3 pi3f = float3(0.f);
+                    if (sampleLight(sd.posW, gScene.getLight(rprev.currentSampleId), sg, ls))
+                    {
+                        pi3f = bsdf.eval(sd, ls.dir, sg) * ls.Li;
+                        crf.update(rprev, pi3f);
+                    }
+                }
+                else
+                {
+                    crf.update(rprev);
+                }
+
+                r = crf.getCombinedReservoir();
+            }
         }
     }
-    bool select = false;
+
     if (kUseSpatialReuse)
     {
         CombinedReservoirFactory crf = CombinedReservoirFactory();
-        // float3 pi3f = float3(0.f);
-        // AnalyticLightSample ls;
-        // if (sampleLight(sd.posW, gScene.getLight(r.currentSampleId), sg, ls))
-        //     pi3f = bsdf.eval(sd, ls.dir, sg) * ls.Li;
         crf.update(r);
-        // RISReservoir res = RISReservoir();
-        // res.update(r.currentSampleId, r.wSum, r.targetPdfSample, rand);
-        // uint M = r.M;
+
         for (uint i = 0; i < kSpatialNeigborsNum; i++)
         {
             float radius = kSampleRadius * rand;
@@ -139,34 +155,34 @@ float3 spatioTemporalTrace(uint2 pixel, uint2 screen, ShadingData sd, IBSDF bsdf
 
             {
                 RISReservoir rn = intermediateReservoir[neighborPos.x + screen.x * neighborPos.y];
-                float3 pi3f = float3(0.f);
-                AnalyticLightSample ls;
-                if (sampleLight(sd.posW, gScene.getLight(rn.currentSampleId), sg, ls))
+                if (kUseUnbiased)
                 {
-                    pi3f = bsdf.eval(sd, ls.dir, sg) * ls.Li;
-                    if (kUseUnbiased)
+                    float3 pi3f = float3(0.f);
+                    AnalyticLightSample ls;
+                    if (sampleLight(sd.posW, gScene.getLight(rn.currentSampleId), sg, ls))
+                    {
+                        pi3f = bsdf.eval(sd, ls.dir, sg) * ls.Li;
                         crf.update(rn, pi3f);
-                    else
-                        crf.update(rn);
-                    // float fixedW = rn.wSum * length(pi3f) / length(rn.targetPdfSample);
-                    // select = res.update(rn.currentSampleId, fixedW, pi3f, randSimple((rn.wSum, rn.targetPdfSample.y)));
-                    // M += rn.M;
+                    }
+                }
+                else
+                {
+                    crf.update(rn);
                 }
             }
         }
-        // res.M = M;
-        // r = res;
         r = crf.getCombinedReservoir();
     }
+
+    prevFrameReservoir[pixel.x + gScreen.x * pixel.y] = r; // for next frame;
+
+    uint lightIndex = r.currentSampleId;
+    float invPdf = r.getInvPDF();
+
     AnalyticLightSample ls;
     if (!sampleLight(sd.posW, gScene.getLight(r.currentSampleId), sg, ls))
         return float3(0.0f, 0.f, 0.f);
-    // if (!select)
-    //     r.targetPdfSample = bsdf.eval(sd, ls.dir, sg) * ls.Li;
 
-    prevFrameReservoir[pixel.x + gScreen.x * pixel.y] = r; // for next frame;
-    uint lightIndex = r.currentSampleId;
-    float invPdf = r.getInvPDF();
     const uint lobeTypes = bsdf.getLobes(sd);
     if (dot(ls.dir, sd.N) <= kMinCosTheta && !(lobeTypes & (uint)LobeType::Transmission))
         return float3(0.f);
@@ -174,6 +190,7 @@ float3 spatioTemporalTrace(uint2 pixel, uint2 screen, ShadingData sd, IBSDF bsdf
         return float3(0.f);
     float3 n = dot(sd.faceN, ls.dir) >= 0.f ? sd.faceN : -sd.faceN;
     float3 origin = computeRayOrigin(sd.posW, n);
+
     Ray ray = Ray(origin, ls.dir, 0.0f, ls.distance);
     if (traceVisibilityRay(ray))
     {
