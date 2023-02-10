@@ -12,7 +12,7 @@ I use [Nvidia Falcor](https://github.com/NVIDIAGameWorks/Falcor) for the framewo
 ### ReSTIR
 ![](Images/2023-02-11-02-56-08.png)
 低分散なレイトレーシング手法である[ReSTIR](https://research.nvidia.com/publication/2020-07_spatiotemporal-reservoir-resampling-real-time-ray-tracing-dynamic-direct)の再現実装です。
-[詳細はこちら](https://blog-56fdvahko-udemegane.vercel.app/p/restir%E3%82%92%E5%AE%9F%E8%A3%85%E3%81%99%E3%82%8B-%E3%81%9D%E3%81%AE1/)
+[詳細はこちら](https://blog.udemegane.net/p/restir%E3%82%92%E5%AE%9F%E8%A3%85%E3%81%99%E3%82%8B-%E3%81%9D%E3%81%AE1/)
 - [x] WRS
 - [x] Temporal Reuse
 - [x] Spatial Reuse
