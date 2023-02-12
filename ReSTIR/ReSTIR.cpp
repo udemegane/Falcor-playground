@@ -363,7 +363,10 @@ void ReSTIR::spatioTemporalReuse(RenderContext *pRenderContext, const RenderData
         bind(channel);
     FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
     mCsState.pState->setProgram(mCsState.pProgram);
-    pRenderContext->dispatch(mCsState.pState.get(), mCsState.pVars.get(), uint3(targetDim, 1u));
+    auto div_round_up = [](uint32_t a, uint32_t b)
+    { return (a + b - 1) / b; };
+    const uint2 groupCount = uint2(div_round_up(targetDim.x, 16u), div_round_up(targetDim.y, 16u));
+    pRenderContext->dispatch(mCsState.pState.get(), mCsState.pVars.get(), uint3(groupCount, 1u));
 }
 
 void ReSTIR::prepareRtVars()

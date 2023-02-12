@@ -215,6 +215,9 @@ float3 spatioTemporalTrace(uint2 pixel, uint2 screen, ShadingData sd, IBSDF bsdf
 [numthreads(16, 16, 1)]
 void main(uint3 dispatchThreadId: SV_DispatchThreadID)
 {
+    uint2 pixel = dispatchThreadId.xy;
+    if (any(pixel >= gScreen))
+        return;
     if (kUseReSTIR)
-        finalShading(dispatchThreadId.xy, gScreen);
+        finalShading(pixel, gScreen);
 }
