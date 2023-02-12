@@ -6,6 +6,7 @@ target_sources(VisibilityRenderPass PRIVATE
     Combine.cs.slang
     ReSTIRShadow.cs.slang
     Shading.cs.slang
+    LoadShadingData.slang
 )
 target_copy_shaders(VisibilityRenderPass RenderPasses/VisibilityRenderPass)
 target_source_group(VisibilityRenderPass "RenderPasses")
