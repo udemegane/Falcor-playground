@@ -199,7 +199,7 @@ void VisibilityRenderPass::shadowPass(RenderContext *pRenderContext, const Rende
 void VisibilityRenderPass::shadingPass(RenderContext *pRenderContext, const RenderData &renderData) {
     FALCOR_ASSERT(mpShadingPass);
 //    mpShadowPass->addDefine(?)
-//    mpShadingPass->getProgram()->setTypeConformances(mpScene->getTypeConformances());
+    mpShadingPass->getProgram()->setTypeConformances(mpScene->getTypeConformances());
     mpShadingPass->getProgram()->addDefines(mpScene->getSceneDefines());
     mpShadingPass->getProgram()->addDefines(mpSampleGenerator->getDefines());
     mpShadingPass->getProgram()->addDefines(getValidResourceDefines(kInputChannels, renderData));
@@ -215,6 +215,8 @@ void VisibilityRenderPass::shadingPass(RenderContext *pRenderContext, const Rend
     var["PerFrameCB"]["gFrameDim"] = frameDim;
 
     mpSampleGenerator->setShaderData(var);
+    mpScene->setRaytracingShaderData(pRenderContext, var);
+    
 
     auto bind = [&](const ChannelDesc &desc){
         auto pTex = renderData.getTexture(desc.name);

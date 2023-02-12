@@ -1,5 +1,7 @@
 #include "Scene/SceneDefines.slangh"
 import Scene.Scene;
+import Scene.Material.ShadingUtils;
+__exported import Scene.Shading;
 __exported import Scene.HitInfo;
 __exported import Scene.Shading;
 import Utils.Math.MathHelpers;

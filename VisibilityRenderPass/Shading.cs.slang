@@ -3,11 +3,15 @@
 
 import Scene.HitInfo;
 import Scene.HitInfoType;
-// import Utils.Math.MathHelpers;
+import Utils.Math.MathHelpers;
 import Utils.Geometry.GeometryHelpers;
 import Utils.Sampling.SampleGenerator;
-// import Rendering.Materials.StandardMaterial;
-// import Rendering.Lights.LightHelpers;
+import Rendering.Materials.IBSDF;
+import Rendering.Materials.IBxDF;
+import Rendering.Materials.IMaterial;
+import Rendering.Materials.StandardMaterial;
+import Rendering.Materials.InteriorListHelpers;
+import Rendering.Lights.LightHelpers;
 import LoadShadingData;
 
 // Input
@@ -35,8 +39,54 @@ void fillTile1Color(uint2 pixel, uint3 groupId)
     gShadingColor[pixel] = float4(float(x / maxX), 0.f, float(y / maxY), 1.0f);
 }
 
+float3 getPrimaryRayDir(uint2 pixel, uint2 screen, const Camera camera)
+{
+    if (true)
+    {
+        return -gViewW[pixel].xyz;
+    }
+    else
+    {
+        return camera.computeRayPinhole(pixel, screen).dir;
+    }
+}
+
+float3 evalDirectLighting(const IBSDF bsdf, const ShadingData sd, SampleGenerator sg)
+{
+    AnalyticLightSample ls;
+    const uint lightCount = gScene.getLightCount();
+    float3 out = float3(0.f);
+    const uint lobeTypes = bsdf.getLobes(sd);
+    for (uint i = 0; i < lightCount; i++)
+    {
+        if (!sampleLight(sd.posW, gScene.getLight(i), sg, ls))
+            continue;
+        if (dot(ls.dir, sd.N) <= kMinCosTheta && !(lobeTypes & (uint)LobeType::Transmission))
+            continue;
+        if (dot(ls.dir, sd.N) >= -kMinCosTheta && !(lobeTypes & (uint)LobeType::Reflection))
+            continue;
+        out += bsdf.eval(sd, ls.dir, sg) * ls.Li;
+    }
+    return out;
+}
+
 void shading(uint2 pixel, uint2 screen)
 {
+    float3 outColor = float3(0.f);
+    const float3 primaryRayDir = getPrimaryRayDir(pixel, screen, gScene.camera);
+    const float3 primaryRayOrigin = gScene.camera.getPosition();
+
+    const HitInfo hit = HitInfo(gVBuffer[pixel]);
+    if (hit.isValid())
+    {
+        let lod = ExplicitLodTextureSampler(0.f);
+        ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
+        let bsdf = gScene.materials.getBSDF(sd, lod);
+        SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
+        outColor += bsdf.getProperties(sd).emission + evalDirectLighting(bsdf, sd, sg);
+    }
+
+    gShadingColor[pixel] = float4(outColor, 1.0f);
 }
 
 [numthreads(16, 16, 1)]
@@ -46,6 +96,5 @@ void main(uint3 groupId: SV_GroupID, uint3 groupThreadId: SV_GroupThreadID, uint
 
     if (any(pixel >= gFrameDim))
         return;
-    // gOutColor[pixel] = float4(0.0f, 1.0f, 0.f, 1.0f);
-    fillTile1Color(pixel, groupId);
+    shading(pixel, gFrameDim);
 }
