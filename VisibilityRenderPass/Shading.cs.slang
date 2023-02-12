@@ -85,6 +85,10 @@ void shading(uint2 pixel, uint2 screen)
         SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
         outColor += bsdf.getProperties(sd).emission + evalDirectLighting(bsdf, sd, sg);
     }
+    else
+    {
+        outColor = gScene.envMap.eval(primaryRayDir); // : kDefaultBackgroundColor;
+    }
 
     gShadingColor[pixel] = float4(outColor, 1.0f);
 }

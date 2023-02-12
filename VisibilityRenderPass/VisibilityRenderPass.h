@@ -72,7 +72,7 @@ private:
 
     uint mFrameCounts = 0;
     bool mOptionsChanged = false;
-
+    Texture::SharedPtr mpShadowTexture;
     ComputePass::SharedPtr mpShadingPass;
     ComputePass::SharedPtr mpShadowPass;
     ComputePass::SharedPtr mpCombinePass;

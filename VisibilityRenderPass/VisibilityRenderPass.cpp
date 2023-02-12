@@ -155,6 +155,9 @@ void VisibilityRenderPass::execute(RenderContext* pRenderContext, const RenderDa
     {
         mpScene->getLightCollection(pRenderContext);
     }
+    const uint2& frameDim = renderData.getDefaultTextureDims();
+    if(!mpShadowTexture || mpShadowTexture->getWidth() != frameDim.x || mpShadowTexture->getHeight() != frameDim.y)
+        mpShadowTexture = Texture::create2D(frameDim.x, frameDim.y, ResourceFormat::R32Float, 1, 1, nullptr, Resource::BindFlags::UnorderedAccess | Resource::BindFlags::ShaderResource);
     shadowPass(pRenderContext, renderData);
     shadingPass(pRenderContext, renderData);
 
@@ -195,6 +198,7 @@ void VisibilityRenderPass::shadowPass(RenderContext *pRenderContext, const Rende
         bind(cd);
     }
     mpShadowPass->execute(pRenderContext, {frameDim, 1u});
+    //pRenderContext->copyResource(mpShadowTexture.get(), renderData[kShadowTexName].get());
 }
 void VisibilityRenderPass::shadingPass(RenderContext *pRenderContext, const RenderData &renderData) {
     FALCOR_ASSERT(mpShadingPass);
@@ -216,7 +220,7 @@ void VisibilityRenderPass::shadingPass(RenderContext *pRenderContext, const Rend
 
     mpSampleGenerator->setShaderData(var);
     mpScene->setRaytracingShaderData(pRenderContext, var);
-    
+
 
     auto bind = [&](const ChannelDesc &desc){
         auto pTex = renderData.getTexture(desc.name);
@@ -229,6 +233,8 @@ void VisibilityRenderPass::shadingPass(RenderContext *pRenderContext, const Rend
     for(const auto &cd:shadingChannels){
         bind(cd);
     }
+    FALCOR_ASSERT(mpShadowTexture.get());
+    //var["gShadow"] = mpShadowTexture;
     mpShadingPass->execute(pRenderContext, {frameDim, 1u});
 }
 void VisibilityRenderPass::combinePass(RenderContext *pRenderContext, const RenderData &renderData) {
