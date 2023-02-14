@@ -33,8 +33,8 @@ RWTexture2D<float4> gOutputColor;
 
 #define is_valid(name) (is_valid_##name != 0)
 
-static const uint kSpatialNeigborsNum = 4;
-static const float kSampleRadius = 5.0;
+static const uint kSpatialNeigborsNum = SPATIAL_RADIUS;
+static const float kSampleRadius = SPATIAL_NEIGHBORS;
 static const bool kUseReSTIR = USE_RESTIR;
 static const bool kUseTemporalReuse = USE_TEMPORAL_REUSE;
 static const uint kTemporalReuseMaxM = TEMPORAL_REUSE_MAX_M;
@@ -189,6 +189,7 @@ float3 spatioTemporalTrace(uint2 pixel, uint2 screen, ShadingData sd, IBSDF bsdf
     uint lightIndex = r.currentSampleId;
     float invPdf = r.getInvPDF();
 
+    // 適切なシャドウレイ生成のためライトサンプルをしなおす
     AnalyticLightSample ls;
     if (!sampleLight(sd.posW, gScene.getLight(r.currentSampleId), sg, ls))
         return float3(0.0f, 0.f, 0.f);
@@ -218,6 +219,6 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
     uint2 pixel = dispatchThreadId.xy;
     if (any(pixel >= gScreen))
         return;
-    if (kUseReSTIR)
+    if (kUseReSTIR && (kUseSpatialReuse || kUseTemporalReuse))
         finalShading(pixel, gScreen);
 }
