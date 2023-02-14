@@ -1,25 +1,25 @@
 from falcor import *
 
-def render_graph_ReSTIR():
+def render_graph_ReSTIRTAA():
     g = RenderGraph('ReSTIR')
-    loadRenderPassLibrary('AccumulatePass.dll')
+    loadRenderPassLibrary('Antialiasing.dll')
     loadRenderPassLibrary('GBuffer.dll')
-    loadRenderPassLibrary('SVGFPass.dll')
     loadRenderPassLibrary('ReSTIR.dll')
-    ReSTIR = createPass('ReSTIR', {'risSampleNums': 8, 'useReSTIR': True, 'useTemporalReuse': False, 'useSpatialReuse': False})
+    ReSTIR = createPass('ReSTIR', {'temporalReuseMaxM': 20, 'risSampleNums': 8, 'autoSetMaxM': True, 'useReSTIR': True, 'useTemporalReuse': True, 'useSpatialReuse': True, 'spatialRadius': 5, 'spatialNeighbors': 4, 'useFixWeight': True})
     g.addPass(ReSTIR, 'ReSTIR')
     VBufferRT = createPass('VBufferRT', {'outputSize': IOSize.Default, 'samplePattern': SamplePattern.Center, 'sampleCount': 8, 'useAlphaTest': True, 'adjustShadingNormals': True, 'forceCullMode': False, 'cull': CullMode.CullBack, 'useTraceRayInline': False, 'useDOF': True})
     g.addPass(VBufferRT, 'VBufferRT')
-    AccumulatePass = createPass('AccumulatePass', {'enabled': False, 'outputSize': IOSize.Default, 'autoReset': True, 'precisionMode': AccumulatePrecision.Single, 'subFrameCount': 0, 'maxAccumulatedFrames': 0})
-    g.addPass(AccumulatePass, 'AccumulatePass')
+    TAA = createPass('TAA', {'alpha': 0.10000000149011612, 'colorBoxSigma': 1.0})
+    g.addPass(TAA, 'TAA')
     g.addEdge('VBufferRT.mvec', 'ReSTIR.motionVecW')
     g.addEdge('VBufferRT.vbuffer', 'ReSTIR.vBuffer')
     g.addEdge('VBufferRT.viewW', 'ReSTIR.viewW')
     g.addEdge('VBufferRT.depth', 'ReSTIR.depth')
-    g.addEdge('ReSTIR.color', 'AccumulatePass.input')
-    g.markOutput('AccumulatePass.output')
+    g.addEdge('VBufferRT.mvec', 'TAA.motionVecs')
+    g.addEdge('ReSTIR.color', 'TAA.colorIn')
+    g.markOutput('TAA.colorOut')
     return g
 
-ReSTIR = render_graph_ReSTIR()
-try: m.addGraph(ReSTIR)
+ReSTIRTAA = render_graph_ReSTIRTAA()
+try: m.addGraph(ReSTIRTAA)
 except NameError: None
