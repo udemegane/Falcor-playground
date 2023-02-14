@@ -10,6 +10,8 @@ import Utils.Math.MathHelpers;
 import Utils.Geometry.GeometryHelpers;
 import Utils.Sampling.SampleGenerator;
 import Rendering.Lights.LightHelpers;
+import Rendering.Lights.EmissiveLightSamplerHelpers;
+import Rendering.Lights.EmissiveLightSamplerInterface;
 import Reservoir;
 import RaytraceUtils;
 
@@ -82,7 +84,8 @@ bool traceShadowRay(float3 origin, float3 dir, float distance)
 float3 evalDirectAnalytic(const uint2 pixel, const uint2 screen, const ShadingData sd, const IBSDF bsdf, SampleGenerator sg)
 {
     const uint lightCount = gScene.getLightCount();
-    if (lightCount == 0)
+    const uint triLightCount = gScene.lightCollection.getActiveTriangleCount();
+    if (lightCount == 0 && triLightCount == 0)
         return float3(0.f);
     if (kUseReSTIR)
     {
@@ -90,28 +93,62 @@ float3 evalDirectAnalytic(const uint2 pixel, const uint2 screen, const ShadingDa
         RISReservoir r = RISReservoir();
         float2 seed = sampleNext2D(sg);
         float rand = randSimple(seed);
-        for (uint i = 0; i < kRISSampleNums; i++)
+        if (lightCount != 0)
         {
-            // Sample LightID from uniform distribution
-            const uint xi = min(uint(rand * lightCount), lightCount - 1);
+            for (uint i = 0; i < kRISSampleNums; i++)
+            {
+                // Sample LightID from uniform distribution
+                const uint xi = min(uint(rand * lightCount), lightCount - 1);
 
-            AnalyticLightSample ls;
-            // Calculate from target distribution Fs*G*Li
-            float3 pi3f = float3(0.000001f);
-            if (sampleLight(sd.posW, gScene.getLight(xi), sg, ls))
-                pi3f = bsdf.eval(sd, ls.dir, sg) * ls.Li;
+                AnalyticLightSample ls;
+                // Calculate from target distribution Fs*G*Li
+                float3 pi3f = float3(0.000001f);
+                if (sampleLight(sd.posW, gScene.getLight(xi), sg, ls))
+                    pi3f = bsdf.eval(sd, ls.dir, sg) * ls.Li;
 
-            // Calculate weight proportional to p(xi)/q(xi).
-            // q() is uniform distribution, Always Return 1/LightCount.
-            // p(xi) is Fs*G*Li. (exclude V())
-            // So weight is pi * lightCount.
-            float pi = length(pi3f);
-            float wi = pi * lightCount; // lightCount means invPdf
-            rand = randSimple(float2(rand, pi));
-            r.update(xi, wi, pi3f, rand);
-            rand = randSimple(float2(rand, pi));
+                // Calculate weight proportional to p(xi)/q(xi).
+                // q() is uniform distribution, Always Return 1/LightCount.
+                // p(xi) is Fs*G*Li. (exclude V())
+                // So weight is pi * lightCount.
+                float pi = length(pi3f);
+                float wi = pi * lightCount; // lightCount means invPdf
+                rand = randSimple(float2(rand, pi));
+                r.update(xi, wi, pi3f, rand);
+                rand = randSimple(float2(rand, pi));
+            }
         }
+
+        // for (uint i = 0; i < kRISSampleNums * 4; i++)
+        // {
+        //     const uint xi = gScene.lightCollection.getActiveTriangleIndex(
+        //         min(uint(rand * triLightCount), triLightCount - 1));
+        //     float3 pi3f = float3(0.f);
+        //     float rand2 = randSimple(float2(rand, r.targetPdfSample.x));
+        //     TriangleLightSample ls;
+
+        //     if (sampleTriangle(sd.posW, xi, float2(rand, rand2), ls))
+        //         pi3f = bsdf.eval(sd, ls.dir, sg) * (ls.pdf > 0.f ? ls.Le / ls.pdf : float3(0.f));
+        //     float pi = length(pi3f);
+        //     float wi = pi * triLightCount;
+        //     rand = randSimple(float2(rand, pi));
+        //     r.update(xi, wi, pi3f, rand);
+        //     rand = randSimple(float2(rand, pi));
+        // }
+        // TriangleLightSample ls;
+
+        // const uint lobeTypes = bsdf.getLobes(sd);
+        // if (!sampleTriangle(sd.posW, r.currentSampleId, float2(r.targetPdfSample.x, r.targetPdfSample.y), ls))
+        //     return float3(0.f);
+        // if (dot(ls.dir, sd.N) <= kMinCosTheta && !(lobeTypes & (uint)LobeType::Transmission))
+        //     return float3(0.f);
+        // if (dot(ls.dir, sd.N) >= -kMinCosTheta && !(lobeTypes & (uint)LobeType::Reflection))
+        //     return float3(0.f);
+        // float3 n = dot(sd.faceN, ls.dir) >= 0.f ? sd.faceN : -sd.faceN;
+        // float3 origin = computeRayOrigin(sd.posW, n);
+        // if (!traceShadowRay(origin, ls.dir, ls.distance))
+        //     return float3(0.f);
         outputReservoir[pixel.x + screen.x * pixel.y] = r;
+        // return r.targetPdfSample * r.getInvPDF();
         return float3(0.f);
     }
     else
@@ -196,6 +233,6 @@ void rayGen()
     uint2 frameDim = DispatchRaysDimensions().xy;
 
     float3 color = tracePath(pixel, frameDim);
-    if (!kUseReSTIR)
-        gOutputColor[pixel] = float4(color, 1.f);
+    // if (!kUseReSTIR)
+    gOutputColor[pixel] = float4(color, 1.f);
 }

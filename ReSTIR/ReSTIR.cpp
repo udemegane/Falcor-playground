@@ -196,8 +196,8 @@ void ReSTIR::execute(RenderContext *pRenderContext, const RenderData &renderData
 
     if (mpScene->getRenderSettings().useEmissiveLights)
     {
-        mpScene->getLightCollection(pRenderContext);
     }
+    mpScene->getLightCollection(pRenderContext);
 
     const bool useDOF = mpScene->getCamera()->getApertureRadius() > 0.f;
     if (useDOF && renderData[kInputViewDir] == nullptr)
