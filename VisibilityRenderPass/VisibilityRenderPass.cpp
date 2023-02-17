@@ -30,37 +30,37 @@
 #include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
 
-const RenderPass::Info VisibilityRenderPass::kInfo { "VisibilityRenderPass", "Insert pass description here." };
+const RenderPass::Info VisibilityRenderPass::kInfo{"VisibilityRenderPass", "Insert pass description here."};
 
 // Don't remove this. it's required for hot-reload to function properly
-extern "C" FALCOR_API_EXPORT const char* getProjDir()
+extern "C" FALCOR_API_EXPORT const char *getProjDir()
 {
     return PROJECT_DIR;
 }
 
-extern "C" FALCOR_API_EXPORT void getPasses(Falcor::RenderPassLibrary& lib)
+extern "C" FALCOR_API_EXPORT void getPasses(Falcor::RenderPassLibrary &lib)
 {
     lib.registerPass(VisibilityRenderPass::kInfo, VisibilityRenderPass::create);
 }
 
-namespace{
-    const std::string kLightingShaderFile="RenderPasses/VisibilityRenderPass/Shading.cs.slang";
-    const std::string kShadowShaderFile="RenderPasses/VisibilityRenderPass/ReSTIRShadow.cs.slang";
-    const std::string kCombineShaderFile="RenderPasses/VisibilityRenderPass/Combine.cs.slang";
+namespace
+{
+    const std::string kLightingShaderFile = "RenderPasses/VisibilityRenderPass/Shading.cs.slang";
+    const std::string kShadowShaderFile = "RenderPasses/VisibilityRenderPass/ReSTIRShadow.cs.slang";
+    const std::string kCombineShaderFile = "RenderPasses/VisibilityRenderPass/Combine.cs.slang";
 
     const ChannelList kInputChannels = {
-            {"vBuffer","gVBuffer", ""},
-            {"motionVecW", "gMVec", "",false,ResourceFormat::RG32Float},
-            {"viewW", "gViewW", "", false, ResourceFormat::RGBA32Float},
-            {"depth", "gDepth", "", true, ResourceFormat::R32Float}
-    };
+        {"vBuffer", "gVBuffer", ""},
+        {"motionVecW", "gMVec", "", false, ResourceFormat::RG32Float},
+        {"viewW", "gViewW", "", false, ResourceFormat::RGBA32Float},
+        {"depth", "gDepth", "", true, ResourceFormat::R32Float}};
     const std::string kOutputTexName = "gOutColor";
     const std::string kShadingTexName = "gShadingColor";
-    const std::string kShadowTexName = "gShadow";//
+    const std::string kShadowTexName = "gShadow"; //
     const ChannelList kOutputChannels = {
-            {"color", kOutputTexName,"", false, ResourceFormat::RGBA32Float},
-            {"shading", kShadingTexName,"", false, ResourceFormat::RGBA32Float},
-            {"shadow", kShadowTexName,"", false, ResourceFormat::R32Float},
+        {"color", kOutputTexName, "", false, ResourceFormat::RGBA32Float},
+        {"shading", kShadingTexName, "", false, ResourceFormat::RGBA32Float},
+        {"shadow", kShadowTexName, "", false, ResourceFormat::R32Float},
     };
 
     const std::string kCombineShadow = "combineShadow";
@@ -68,10 +68,12 @@ namespace{
     const std::string kUseTemporalReuse = "useTemporalReuse";
 }
 
-VisibilityRenderPass::VisibilityRenderPass(const Dictionary& dict)  : RenderPass(kInfo) {
+VisibilityRenderPass::VisibilityRenderPass(const Dictionary &dict) : RenderPass(kInfo)
+{
     parseDictionary(dict);
-    mpSampleGenerator= SampleGenerator::create(SAMPLE_GENERATOR_DEFAULT);
-    if(!gpDevice->isFeatureSupported(Device::SupportedFeatures::RaytracingTier1_1)) {
+    mpSampleGenerator = SampleGenerator::create(SAMPLE_GENERATOR_DEFAULT);
+    if (!gpDevice->isFeatureSupported(Device::SupportedFeatures::RaytracingTier1_1))
+    {
         logError("Inline Raytracing is not supported on this device.");
     }
     Program::DefineList defines;
@@ -92,19 +94,26 @@ VisibilityRenderPass::VisibilityRenderPass(const Dictionary& dict)  : RenderPass
     }
 }
 
-void VisibilityRenderPass::parseDictionary(const Dictionary &dict) {
-    for (const auto&[k,v]:dict) {
-        if (k == kCombineShadow) {
+void VisibilityRenderPass::parseDictionary(const Dictionary &dict)
+{
+    for (const auto &[k, v] : dict)
+    {
+        if (k == kCombineShadow)
+        {
             mCombineShadow = v;
-        }else if(k == kRISSamples) {
+        }
+        else if (k == kRISSamples)
+        {
             ReSTIRSettings.mRISSamples = v;
-        }else if(k == kUseTemporalReuse) {
+        }
+        else if (k == kUseTemporalReuse)
+        {
             ReSTIRSettings.mUseTemporalReuse = v;
         }
     }
 }
 
-VisibilityRenderPass::SharedPtr VisibilityRenderPass::create(RenderContext* pRenderContext, const Dictionary& dict)
+VisibilityRenderPass::SharedPtr VisibilityRenderPass::create(RenderContext *pRenderContext, const Dictionary &dict)
 {
     SharedPtr pPass = SharedPtr(new VisibilityRenderPass(dict));
     return pPass;
@@ -119,7 +128,7 @@ Dictionary VisibilityRenderPass::getScriptingDictionary()
     return dict;
 }
 
-RenderPassReflection VisibilityRenderPass::reflect(const CompileData& compileData)
+RenderPassReflection VisibilityRenderPass::reflect(const CompileData &compileData)
 {
     // Define the required resources here
     RenderPassReflection reflector;
@@ -128,17 +137,20 @@ RenderPassReflection VisibilityRenderPass::reflect(const CompileData& compileDat
     return reflector;
 }
 
-void VisibilityRenderPass::setScene(RenderContext *pRenderContext, const Scene::SharedPtr &pScene) {
+void VisibilityRenderPass::setScene(RenderContext *pRenderContext, const Scene::SharedPtr &pScene)
+{
     mFrameCounts = 0;
     mpScene = pScene;
-    if(!mpScene) return;
+    if (!mpScene)
+        return;
     mpShadingPass->getProgram()->addDefines(mpScene->getSceneDefines());
 }
 
-void VisibilityRenderPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
+void VisibilityRenderPass::execute(RenderContext *pRenderContext, const RenderData &renderData)
 {
     auto &dict = renderData.getDictionary();
-    if(mOptionsChanged){
+    if (mOptionsChanged)
+    {
         auto flags = dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None);
         dict[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
         mOptionsChanged = false;
@@ -155,89 +167,100 @@ void VisibilityRenderPass::execute(RenderContext* pRenderContext, const RenderDa
     {
         mpScene->getLightCollection(pRenderContext);
     }
-    const uint2& frameDim = renderData.getDefaultTextureDims();
-    if(!mpShadowTexture || mpShadowTexture->getWidth() != frameDim.x || mpShadowTexture->getHeight() != frameDim.y)
+    const uint2 &frameDim = renderData.getDefaultTextureDims();
+    if (!mpShadowTexture || mpShadowTexture->getWidth() != frameDim.x || mpShadowTexture->getHeight() != frameDim.y)
         mpShadowTexture = Texture::create2D(frameDim.x, frameDim.y, ResourceFormat::R32Float, 1, 1, nullptr, Resource::BindFlags::UnorderedAccess | Resource::BindFlags::ShaderResource);
     shadowPass(pRenderContext, renderData);
     shadingPass(pRenderContext, renderData);
 
-    //pRenderContext->clearTexture(renderData.getTexture("gOutColor").get());
-    if(mCombineShadow){
+    // pRenderContext->clearTexture(renderData.getTexture("gOutColor").get());
+    if (mCombineShadow)
+    {
         combinePass(pRenderContext, renderData);
     }
     mFrameCounts++;
 }
-void VisibilityRenderPass::shadowPass(RenderContext *pRenderContext, const RenderData &renderData) {
+void VisibilityRenderPass::shadowPass(RenderContext *pRenderContext, const RenderData &renderData)
+{
     FALCOR_ASSERT(mpShadowPass);
     mpShadowPass->addDefine("RIS_SAMPLES", std::to_string(ReSTIRSettings.mRISSamples));
-    mpShadowPass->addDefine("USE_TEMPORAL_REUSE", ReSTIRSettings.mUseTemporalReuse?"1":"0");
+    mpShadowPass->addDefine("USE_TEMPORAL_REUSE", ReSTIRSettings.mUseTemporalReuse ? "1" : "0");
 
     mpShadowPass->getProgram()->addDefines(mpScene->getSceneDefines());
     mpShadowPass->getProgram()->addDefines(mpSampleGenerator->getDefines());
     mpShadowPass->getProgram()->addDefines(getValidResourceDefines(kInputChannels, renderData));
     mpShadowPass->getProgram()->setTypeConformances(mpScene->getTypeConformances());
-    std::vector<ChannelDesc> shadowChannels = kOutputChannels;//{kOutputChannels[2]};
+    std::vector<ChannelDesc> shadowChannels = kOutputChannels; //{kOutputChannels[2]};
     mpShadowPass->getProgram()->addDefines(getValidResourceDefines(shadowChannels, renderData));
     mpShadowPass->setVars(ComputeVars::create(mpShadowPass->getProgram()->getReflector()));
     FALCOR_ASSERT(mpShadowPass->hasVars())
 
     auto var = mpShadowPass->getRootVar();
-    const uint2& frameDim = renderData.getDefaultTextureDims();
+    const uint2 &frameDim = renderData.getDefaultTextureDims();
     var["PerFrameCB"]["gFrameCount"] = mFrameCounts;
     var["PerFrameCB"]["gFrameDim"] = frameDim;
     mpSampleGenerator->setShaderData(var);
     mpScene->setRaytracingShaderData(pRenderContext, var);
 
-    auto bind = [&](const ChannelDesc &desc){
-        if(!desc.texname.empty())var[desc.texname]=renderData.getTexture(desc.name);
+    auto bind = [&](const ChannelDesc &desc)
+    {
+        if (!desc.texname.empty())
+            var[desc.texname] = renderData.getTexture(desc.name);
     };
-    for(const auto &cd:kInputChannels){
+    for (const auto &cd : kInputChannels)
+    {
         bind(cd);
     }
-    for(const auto &cd:shadowChannels){
+    for (const auto &cd : shadowChannels)
+    {
         bind(cd);
     }
     mpShadowPass->execute(pRenderContext, {frameDim, 1u});
-    //pRenderContext->copyResource(mpShadowTexture.get(), renderData[kShadowTexName].get());
+    // pRenderContext->copyResource(mpShadowTexture.get(), renderData[kShadowTexName].get());
 }
-void VisibilityRenderPass::shadingPass(RenderContext *pRenderContext, const RenderData &renderData) {
+void VisibilityRenderPass::shadingPass(RenderContext *pRenderContext, const RenderData &renderData)
+{
     FALCOR_ASSERT(mpShadingPass);
-//    mpShadowPass->addDefine(?)
+    //    mpShadowPass->addDefine(?)
     mpShadingPass->getProgram()->setTypeConformances(mpScene->getTypeConformances());
     mpShadingPass->getProgram()->addDefines(mpScene->getSceneDefines());
     mpShadingPass->getProgram()->addDefines(mpSampleGenerator->getDefines());
     mpShadingPass->getProgram()->addDefines(getValidResourceDefines(kInputChannels, renderData));
-    std::vector<ChannelDesc> shadingChannels = kOutputChannels;//{kOutputChannels[1]};
+    std::vector<ChannelDesc> shadingChannels = kOutputChannels; //{kOutputChannels[1]};
     mpShadingPass->getProgram()->addDefines(getValidResourceDefines(shadingChannels, renderData));
     auto vars = ComputeVars::create(mpShadingPass->getProgram()->getReflector());
     mpShadingPass->setVars(vars);
     FALCOR_ASSERT(mpShadingPass->hasVars())
 
     auto var = mpShadingPass->getRootVar();
-    const uint2& frameDim = renderData.getDefaultTextureDims();
+    const uint2 &frameDim = renderData.getDefaultTextureDims();
     var["PerFrameCB"]["gFrameCount"] = mFrameCounts;
     var["PerFrameCB"]["gFrameDim"] = frameDim;
 
     mpSampleGenerator->setShaderData(var);
     mpScene->setRaytracingShaderData(pRenderContext, var);
 
-
-    auto bind = [&](const ChannelDesc &desc){
+    auto bind = [&](const ChannelDesc &desc)
+    {
         auto pTex = renderData.getTexture(desc.name);
         FALCOR_ASSERT(pTex);
-        if(!desc.texname.empty())var[desc.texname]=pTex;
+        if (!desc.texname.empty())
+            var[desc.texname] = pTex;
     };
-    for(const auto &cd:kInputChannels){
+    for (const auto &cd : kInputChannels)
+    {
         bind(cd);
     }
-    for(const auto &cd:shadingChannels){
+    for (const auto &cd : shadingChannels)
+    {
         bind(cd);
     }
     FALCOR_ASSERT(mpShadowTexture.get());
-    //var["gShadow"] = mpShadowTexture;
+    // var["gShadow"] = mpShadowTexture;
     mpShadingPass->execute(pRenderContext, {frameDim, 1u});
 }
-void VisibilityRenderPass::combinePass(RenderContext *pRenderContext, const RenderData &renderData) {
+void VisibilityRenderPass::combinePass(RenderContext *pRenderContext, const RenderData &renderData)
+{
     FALCOR_ASSERT(mpCombinePass);
     std::vector<ChannelDesc> combineChannels = kOutputChannels;
     mpCombinePass->getProgram()->addDefines(getValidResourceDefines(combineChannels, renderData));
@@ -245,24 +268,28 @@ void VisibilityRenderPass::combinePass(RenderContext *pRenderContext, const Rend
     FALCOR_ASSERT(mpCombinePass->hasVars())
 
     auto var = mpCombinePass->getRootVar();
-    const uint2& frameDim = renderData.getDefaultTextureDims();
-    auto bind = [&](const ChannelDesc &desc){
-        if(!desc.texname.empty())var[desc.texname]=renderData.getTexture(desc.name);
+    const uint2 &frameDim = renderData.getDefaultTextureDims();
+    auto bind = [&](const ChannelDesc &desc)
+    {
+        if (!desc.texname.empty())
+            var[desc.texname] = renderData.getTexture(desc.name);
     };
 
-    for(const auto &cd:kOutputChannels){
+    for (const auto &cd : kOutputChannels)
+    {
         bind(cd);
     }
     mpCombinePass->execute(pRenderContext, {frameDim, 1u});
 }
 
-void VisibilityRenderPass::renderUI(Gui::Widgets& widget)
+void VisibilityRenderPass::renderUI(Gui::Widgets &widget)
 {
     bool dirty = false;
     dirty |= widget.checkbox("Combine Shadow", mCombineShadow);
     dirty |= widget.var("RISSamples", ReSTIRSettings.mRISSamples, 1u, 64u);
     dirty |= widget.checkbox("Use Temporal Reuse", ReSTIRSettings.mUseTemporalReuse);
-    if(dirty){
-        mOptionsChanged=true;
+    if (dirty)
+    {
+        mOptionsChanged = true;
     }
 }

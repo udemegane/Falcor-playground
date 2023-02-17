@@ -2,13 +2,9 @@
 #include "Utils/Math/MathConstants.slangh"
 
 import Scene.HitInfo;
-import Scene.HitInfoType;
 import Utils.Math.MathHelpers;
 import Utils.Geometry.GeometryHelpers;
 import Utils.Sampling.SampleGenerator;
-import Rendering.Materials.IBSDF;
-import Rendering.Materials.IBxDF;
-import Rendering.Materials.IMaterial;
 import Rendering.Materials.StandardMaterial;
 import Rendering.Materials.InteriorListHelpers;
 import Rendering.Lights.LightHelpers;
@@ -75,22 +71,29 @@ void shading(uint2 pixel, uint2 screen)
     float3 outColor = float3(0.f);
     const float3 primaryRayDir = getPrimaryRayDir(pixel, screen, gScene.camera);
     const float3 primaryRayOrigin = gScene.camera.getPosition();
-
+    uint2 pix = pixel;
     const HitInfo hit = HitInfo(gVBuffer[pixel]);
     if (hit.isValid())
     {
         let lod = ExplicitLodTextureSampler(0.f);
         ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
+
         let bsdf = gScene.materials.getBSDF(sd, lod);
         SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
+
         outColor += bsdf.getProperties(sd).emission + evalDirectLighting(bsdf, sd, sg);
+
+        // float4x4 cpm = gScene.camera.getViewProj();
+        // float4 clip = mul(cpm, float4(sd.posW, 1.0));
+        // float2 uv = float2((clip.x / clip.w) * 0.5 + 0.5, (-clip.y / clip.w) * 0.5 + 0.5);
+        // pix = uint2(uv.x * screen.x, uv.y * screen.y);
     }
     else
     {
         outColor = gScene.envMap.eval(primaryRayDir); // : kDefaultBackgroundColor;
     }
 
-    gShadingColor[pixel] = float4(outColor, 1.0f);
+    gShadingColor[pix] = float4(outColor, 1.0f);
 }
 
 [numthreads(16, 16, 1)]
