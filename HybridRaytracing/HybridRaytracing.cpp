@@ -30,40 +30,43 @@
 #include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
 
-const RenderPass::Info HybridRaytracing::kInfo { "HybridRaytracing", "Insert pass description here." };
+const RenderPass::Info HybridRaytracing::kInfo{"HybridRaytracing", "Insert pass description here."};
 
 // Don't remove this. it's required for hot-reload to function properly
-extern "C" FALCOR_API_EXPORT const char* getProjDir()
+extern "C" FALCOR_API_EXPORT const char *getProjDir()
 {
     return PROJECT_DIR;
 }
 
-extern "C" FALCOR_API_EXPORT void getPasses(Falcor::RenderPassLibrary& lib)
+extern "C" FALCOR_API_EXPORT void getPasses(Falcor::RenderPassLibrary &lib)
 {
     lib.registerPass(HybridRaytracing::kInfo, HybridRaytracing::create);
 }
 
-namespace {
-    const std::string kPTracerFile="RenderPasses/HybridRaytracing/HybridPathtrace.cs.slang";
+namespace
+{
+    const std::string kPTracerFile = "RenderPasses/HybridRaytracing/HybridPathtrace.cs.slang";
 
-    const ChannelList kInputChannels={
-            {"vBuffer","gVBuffer", "", false},
-            {"depth", "gDepth", "", false, ResourceFormat::R32Float},
-            {"posW", "gPosW", "", false, ResourceFormat::RGBA32Float},
-            {"motionVecW", "gMVec", "",true,ResourceFormat::RG32Float},
-            {"viewW", "gViewW", "", true, ResourceFormat::RGBA32Float},
+    const ChannelList kInputChannels = {
+        {"vBuffer", "gVBuffer", "", false},
+        {"depth", "gDepth", "", false, ResourceFormat::R32Float},
+        {"posW", "gPosW", "", true, ResourceFormat::RGBA32Float},
+        {"motionVecW", "gMVec", "", true, ResourceFormat::RG32Float},
+        {"viewW", "gViewW", "", true, ResourceFormat::RGBA32Float},
     };
-    const ChannelList kOutputChannels={
-            {"output", "gOutput", "", false, ResourceFormat::RGBA32Float},};
+    const ChannelList kOutputChannels = {
+        {"output", "gOutColor", "", false, ResourceFormat::RGBA32Float},
+    };
 
     const std::string kUseHybrid = "useHybrid";
     const std::string kMaxBounces = "maxBounces";
 }
 
-HybridRaytracing::HybridRaytracing(const Dictionary &dict): RenderPass(kInfo) {
+HybridRaytracing::HybridRaytracing(const Dictionary &dict) : RenderPass(kInfo)
+{
     parseDictionary(dict);
-    mpSampleGenerator=SampleGenerator::create(SAMPLE_GENERATOR_DEFAULT);
-    if(!gpDevice->isFeatureSupported(Device::SupportedFeatures::RaytracingTier1_1))
+    mpSampleGenerator = SampleGenerator::create(SAMPLE_GENERATOR_DEFAULT);
+    if (!gpDevice->isFeatureSupported(Device::SupportedFeatures::RaytracingTier1_1))
     {
         logError("Inline Raytracing is not supported on this device");
     }
@@ -71,19 +74,19 @@ HybridRaytracing::HybridRaytracing(const Dictionary &dict): RenderPass(kInfo) {
     {
         Program::Desc desc;
         desc.addShaderLibrary(kPTracerFile).csEntry("main").setShaderModel("6_5");
-        mpPTracer=ComputePass::create(desc,defines,false);
+        mpPTracer = ComputePass::create(desc, defines, false);
     }
 }
 
-HybridRaytracing::SharedPtr HybridRaytracing::create(RenderContext* pRenderContext, const Dictionary& dict)
+HybridRaytracing::SharedPtr HybridRaytracing::create(RenderContext *pRenderContext, const Dictionary &dict)
 {
     SharedPtr pPass = SharedPtr(new HybridRaytracing(dict));
     return pPass;
 }
 
-void HybridRaytracing::parseDictionary(const Dictionary& dict)
+void HybridRaytracing::parseDictionary(const Dictionary &dict)
 {
-    for (const auto& [key, value] : dict)
+    for (const auto &[key, value] : dict)
     {
         if (key == kUseHybrid)
         {
@@ -103,12 +106,12 @@ void HybridRaytracing::parseDictionary(const Dictionary& dict)
 Dictionary HybridRaytracing::getScriptingDictionary()
 {
     Dictionary dict;
-    dict[kUseHybrid]=mUseHybrid;
-    dict[kMaxBounces]=mMaxBounces;
+    dict[kUseHybrid] = mUseHybrid;
+    dict[kMaxBounces] = mMaxBounces;
     return dict;
 }
 
-RenderPassReflection HybridRaytracing::reflect(const CompileData& compileData)
+RenderPassReflection HybridRaytracing::reflect(const CompileData &compileData)
 {
     RenderPassReflection reflector;
     addRenderPassInputs(reflector, kInputChannels);
@@ -116,23 +119,26 @@ RenderPassReflection HybridRaytracing::reflect(const CompileData& compileData)
     return reflector;
 }
 
-void HybridRaytracing::setScene(RenderContext *pRenderContext, const Scene::SharedPtr &pScene) {
-    mpScene=pScene;
-    mFrameCount=0;
+void HybridRaytracing::setScene(RenderContext *pRenderContext, const Scene::SharedPtr &pScene)
+{
+    mpScene = pScene;
+    mFrameCount = 0;
     Program::DefineList defines;
     {
         Program::Desc desc;
         desc.addShaderModules(mpScene->getShaderModules());
         desc.addShaderLibrary(kPTracerFile).csEntry("main").setShaderModel("6_5");
-        mpPTracer=ComputePass::create(desc,defines,false);
+        mpPTracer = ComputePass::create(desc, defines, false);
         mpPTracer->getProgram()->addDefines(mpScene->getSceneDefines());
+        mpPTracer->getProgram()->setTypeConformances(mpScene->getTypeConformances());
     }
 }
 
-void HybridRaytracing::execute(RenderContext* pRenderContext, const RenderData& renderData)
+void HybridRaytracing::execute(RenderContext *pRenderContext, const RenderData &renderData)
 {
     auto &dict = renderData.getDictionary();
-    if(mOptionsChanged){
+    if (mOptionsChanged)
+    {
         auto flags = dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None);
         dict[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
         mOptionsChanged = false;
@@ -149,46 +155,57 @@ void HybridRaytracing::execute(RenderContext* pRenderContext, const RenderData& 
     {
         mpScene->getLightCollection(pRenderContext);
     }
-    pathTrace(pRenderContext,renderData);
+    pathTrace(pRenderContext, renderData);
+    mFrameCount++;
 }
-void HybridRaytracing::pathTrace(RenderContext *pRenderContext, const RenderData &renderData) {
+void HybridRaytracing::pathTrace(RenderContext *pRenderContext, const RenderData &renderData)
+{
     FALCOR_ASSERT(mpPTracer)
+    FALCOR_ASSERT(mpScene)
+    FALCOR_ASSERT(mpSampleGenerator)
     mpPTracer->addDefine("MAX_BOUNSES", std::to_string(mMaxBounces));
-    mpPTracer->addDefine("USE_HYBRID",mUseHybrid?"1":"0");
+    mpPTracer->addDefine("USE_HYBRID", mUseHybrid ? "1" : "0");
 
     mpPTracer->getProgram()->addDefines(mpScene->getSceneDefines());
     mpPTracer->getProgram()->addDefines(mpSampleGenerator->getDefines());
-    mpPTracer->getProgram()->addDefines(getValidResourceDefines(kInputChannels,renderData));
-    mpPTracer->getProgram()->addDefines(getValidResourceDefines(kOutputChannels,renderData));
     mpPTracer->getProgram()->setTypeConformances(mpScene->getTypeConformances());
+
+    mpPTracer->getProgram()->addDefines(getValidResourceDefines(kInputChannels, renderData));
+    mpPTracer->getProgram()->addDefines(getValidResourceDefines(kOutputChannels, renderData));
+
     mpPTracer->setVars(ComputeVars::create(mpPTracer->getProgram()->getReflector()));
     FALCOR_ASSERT(mpPTracer->hasVars());
 
     auto var = mpPTracer->getRootVar();
-    const uint2& frameDim = renderData.getDefaultTextureDims();
-    var["PerframeCB"]["gFrameCount"]=mFrameCount;
-    var["PerframeCB"]["gFrameDim"]=frameDim;
+    const uint2 &frameDim = renderData.getDefaultTextureDims();
+    var["PerframeCB"]["gFrameCount"] = mFrameCount;
+    var["PerframeCB"]["gFrameDim"] = frameDim;
     mpSampleGenerator->setShaderData(var);
-    mpScene->setRaytracingShaderData(pRenderContext,var);
+    mpScene->setRaytracingShaderData(pRenderContext, var);
 
-    auto bind = [&](const ChannelDesc &desc){
-        if(!desc.texname.empty())var[desc.texname]=renderData.getTexture(desc.name);
+    auto bind = [&](const ChannelDesc &desc)
+    {
+        if (!desc.texname.empty())
+            var[desc.texname] = renderData.getTexture(desc.name);
     };
-    for(const auto &cd:kInputChannels){
+    for (const auto &cd : kInputChannels)
+    {
         bind(cd);
     }
-    for(const auto &cd:kOutputChannels){
+    for (const auto &cd : kOutputChannels)
+    {
         bind(cd);
     }
 
     mpPTracer->execute(pRenderContext, {frameDim, 1u});
 }
-void HybridRaytracing::renderUI(Gui::Widgets& widget)
+void HybridRaytracing::renderUI(Gui::Widgets &widget)
 {
     bool dirty = false;
-    dirty |=widget.checkbox("Use Hybrid Raytracing", mUseHybrid);
-    dirty |=widget.var("Max Bounces", mMaxBounces, 1u, 10u);
-    if(dirty){
-        mOptionsChanged=true;
+    dirty |= widget.checkbox("Use Hybrid Raytracing", mUseHybrid);
+    dirty |= widget.var("Max Bounces", mMaxBounces, 1u, 10u);
+    if (dirty)
+    {
+        mOptionsChanged = true;
     }
 }
