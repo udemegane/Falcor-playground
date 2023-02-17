@@ -26,15 +26,14 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #pragma once
-
 #include "Falcor.h"
 
 using namespace Falcor;
 
-class ReSTIR : public RenderPass
+class GBufferRasterDebugPass : public RenderPass
 {
 public:
-    using SharedPtr = std::shared_ptr<ReSTIR>;
+    using SharedPtr = std::shared_ptr<GBufferRasterDebugPass>;
 
     static const Info kInfo;
 
@@ -46,73 +45,42 @@ public:
     static SharedPtr create(RenderContext *pRenderContext = nullptr, const Dictionary &dict = {});
 
     virtual Dictionary getScriptingDictionary() override;
-
     virtual RenderPassReflection reflect(const CompileData &compileData) override;
-
+    virtual void compile(RenderContext *pRenderContext, const CompileData &compileData) override {}
     virtual void execute(RenderContext *pRenderContext, const RenderData &renderData) override;
-
     virtual void renderUI(Gui::Widgets &widget) override;
-
     virtual void setScene(RenderContext *pRenderContext, const Scene::SharedPtr &pScene) override;
-
     virtual bool onMouseEvent(const MouseEvent &mouseEvent) override { return false; }
-
     virtual bool onKeyEvent(const KeyboardEvent &keyEvent) override { return false; }
 
+    enum class DebugMode : uint32_t
+    {
+        Depth,
+        PosW,
+        NormW,
+        TangentW,
+        FaceNormalW,
+        TexCoord,
+        TexGrad,
+        MotionVec,
+        MaterialData,
+        VBuffer,
+        DiffuseOpacity,
+        SpecRough,
+        Emissive,
+        ViewW,
+        PosAndNormWidth,
+        LinearZ,
+        TileColor,
+    };
+
 private:
-    ReSTIR(const Dictionary &dict); //  : RenderPass(kInfo) {}
-    void parseDictionary(const Dictionary &dict);
+    bool mDepth = true;
 
-    void prepareRtVars();
-
-    void prepareCsVars(ComputeProgram::SharedPtr &pProgram, ComputeVars::SharedPtr &pVars);
-
-    void traceray(RenderContext *pRenderContext, const RenderData &renderData);
-
-    void execWRS(RenderContext *pRenderContext, const RenderData &renderData);
-
-    void spatioTemporalReuse(RenderContext *pRenderContext, const RenderData &renderData);
-
-    Scene::SharedPtr mpScene;
-    SampleGenerator::SharedPtr mpSampleGenerator; // GPU上でのサンプル生成器　シェーダーに渡す
-
-    uint mRISSampleNums = 8;
-    uint mTemporalReuseMaxM = 20;
-    bool mAutoSetMaxM = true;
-    bool mUseReSTIR = true;
-    bool mUseTemporalReuse = true;
-    bool mUseSpatialReuse = true;
-    uint mSpatialRadius = 5;
-    uint mSpatialNeighbors = 4;
-    bool mUseFixWeight = true;
-
-    uint mFrameCount = 0; // 累積フレーム数
+    DebugMode mDebugMode = DebugMode::TileColor;
     bool mOptionsChanged = false;
 
-    Texture::SharedPtr mpInterColor;
-    Buffer::SharedPtr mpPrevFrameReservoir;
-    Buffer::SharedPtr mpIntermediateReservoir;
-
-    struct
-    {
-        RtProgram::SharedPtr pProgram;
-        RtBindingTable::SharedPtr pBindingTable;
-        RtProgramVars::SharedPtr pVars;
-    } mRtState;
-
-    struct
-    {
-        ComputeProgram::SharedPtr pProgram = nullptr;
-        ComputeState::SharedPtr pState = nullptr;
-        ComputeVars::SharedPtr pVars = nullptr;
-    } mCsState;
-
-    struct
-    {
-        ComputeProgram::SharedPtr pProgram = nullptr;
-        ComputeState::SharedPtr pState = nullptr;
-        ComputeVars::SharedPtr pVars = nullptr;
-    } mWRSState;
-
-    //    ComputePass::SharedPtr mpSpatioTemporalReusePass;
+    Scene::SharedPtr mpScene;
+    ComputePass::SharedPtr mpViewPass;
+    GBufferRasterDebugPass(const Dictionary &dict);
 };
