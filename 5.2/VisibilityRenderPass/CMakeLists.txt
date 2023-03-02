@@ -1,4 +1,4 @@
-add_renderpass(VisibilityRenderPass)
+add_plugin(VisibilityRenderPass)
 
 target_sources(VisibilityRenderPass PRIVATE
     VisibilityRenderPass.cpp

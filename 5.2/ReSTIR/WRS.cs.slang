@@ -50,6 +50,7 @@ float randSimple(float2 p)
 void prepareReservoir(const uint2 pixel, const uint2 screen, const ShadingData sd, const IBSDF bsdf, SampleGenerator sg)
 {
     const uint lightCount = gScene.getLightCount();
+
     if (kUseReSTIR && lightCount != 0)
     {
 
