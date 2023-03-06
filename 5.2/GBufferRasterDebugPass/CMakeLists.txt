@@ -1,4 +1,4 @@
-add_renderpass(GBufferRasterDebugPass)
+add_plugin(GBufferRasterDebugPass)
 
 target_sources(GBufferRasterDebugPass PRIVATE
     GBufferRasterDebugPass.cpp

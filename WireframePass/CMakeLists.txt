@@ -1,8 +1,8 @@
-add_renderpass(WireframePass)
+add_plugin(WireframePass)
 
 target_sources(WireframePass PRIVATE
     WireframePass.cpp
-        WireframePass.h
+    WireframePass.h
     WireframePass.3d.slang
 )
 target_copy_shaders(WireframePass RenderPasses/WireframePass)

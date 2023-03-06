@@ -1,4 +1,4 @@
-add_renderpass(ReSTIR)
+add_plugin(ReSTIR)
 
 target_sources(ReSTIR PRIVATE
     ReSTIR.cpp

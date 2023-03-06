@@ -1,4 +1,4 @@
-add_renderpass(HybridRaytracing)
+add_plugin(HybridRaytracing)
 
 target_sources(HybridRaytracing PRIVATE
     HybridRaytracing.cpp

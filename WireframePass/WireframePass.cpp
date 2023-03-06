@@ -26,50 +26,42 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #include "WireframePass.h"
-#include "RenderGraph/RenderPassLibrary.h"
+#include "RenderGraph/RenderPassHelpers.h"
+#include "RenderGraph/RenderPassStandardFlags.h"
 
-const RenderPass::Info WireframePass::kInfo{"WireframePass", "Insert pass description here."};
-
-// Don't remove this. it's required for hot-reload to function properly
-extern "C" FALCOR_API_EXPORT const char *getProjDir()
+extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
-    return PROJECT_DIR;
+    registry.registerClass<RenderPass, WireframePass>();
 }
 
-extern "C" FALCOR_API_EXPORT void getPasses(Falcor::RenderPassLibrary &lib)
+WireframePass::SharedPtr WireframePass::create(std::shared_ptr<Device> pDevice, const Dictionary& dict)
 {
-    lib.registerPass(WireframePass::kInfo, WireframePass::create);
+    SharedPtr pPass = SharedPtr(new WireframePass(std::move(pDevice)));
+
+    return pPass;
 }
 
-WireframePass::WireframePass() : RenderPass(kInfo)
+WireframePass::WireframePass(std::shared_ptr<Device> pDevice) : RenderPass(std::move(pDevice))
 {
-    mpProgram = GraphicsProgram::createFromFile("RenderPasses/WireframePass/WireframePass.3d.slang", "vsMain",
-                                                "psMain");
+    mpProgram = GraphicsProgram::createFromFile(mpDevice, "RenderPasses/WireframePass/WireframePass.3d.slang", "vsMain", "psMain");
     RasterizerState::Desc wireframeDesc;
     wireframeDesc.setFillMode(RasterizerState::FillMode::Wireframe);
     wireframeDesc.setCullMode(RasterizerState::CullMode::None);
     mpRasterState = RasterizerState::create(wireframeDesc);
 
-    mpGraphicsState = GraphicsState::create();
+    mpGraphicsState = GraphicsState::create(mpDevice);
     mpGraphicsState->setProgram(mpProgram);
     mpGraphicsState->setRasterizerState(mpRasterState);
 }
 
-void WireframePass::setScene(RenderContext *pRenderContext, const Scene::SharedPtr &pScene)
+void WireframePass::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene)
 {
     mpScene = pScene;
     if (mpScene)
     {
         mpProgram->addDefines(mpScene->getSceneDefines());
     }
-    mpVars = GraphicsVars::create(mpProgram->getReflector());
-}
-
-WireframePass::SharedPtr WireframePass::create(RenderContext *pRenderContext, const Dictionary &dict)
-{
-    SharedPtr pPass = SharedPtr(new WireframePass());
-
-    return pPass;
+    mpVars = GraphicsVars::create(mpDevice, mpProgram->getReflector());
 }
 
 Dictionary WireframePass::getScriptingDictionary()
@@ -77,7 +69,7 @@ Dictionary WireframePass::getScriptingDictionary()
     return Dictionary();
 }
 
-RenderPassReflection WireframePass::reflect(const CompileData &compileData)
+RenderPassReflection WireframePass::reflect(const CompileData& compileData)
 {
     // Define the required resources here
     RenderPassReflection reflector;
@@ -85,9 +77,9 @@ RenderPassReflection WireframePass::reflect(const CompileData &compileData)
     return reflector;
 }
 
-void WireframePass::execute(RenderContext *pRenderContext, const RenderData &renderData)
+void WireframePass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    auto pTargetFbo = Fbo::create({renderData.getTexture("output")});
+    auto pTargetFbo = Fbo::create(mpDevice.get(), {renderData.getTexture("output")});
     const float4 clearColor(0, 0, 0, 1);
     pRenderContext->clearFbo(pTargetFbo.get(), clearColor, 1.0f, 0, FboAttachmentType::All);
     mpGraphicsState->setFbo(pTargetFbo);
@@ -99,6 +91,4 @@ void WireframePass::execute(RenderContext *pRenderContext, const RenderData &ren
     }
 }
 
-void WireframePass::renderUI(Gui::Widgets &widget)
-{
-}
+void WireframePass::renderUI(Gui::Widgets& widget) {}
