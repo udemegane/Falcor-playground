@@ -46,24 +46,40 @@ public:
 
     virtual Dictionary getScriptingDictionary() override;
     virtual RenderPassReflection reflect(const CompileData& compileData) override;
-    virtual void compile(RenderContext* pRenderContext, const CompileData& compileData) override {}
+    virtual void compile(RenderContext* pRenderContext, const CompileData& compileData) override;
     virtual void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     virtual void renderUI(Gui::Widgets& widget) override;
-    virtual void setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene) override {}
+    virtual void setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene) override;
     virtual bool onMouseEvent(const MouseEvent& mouseEvent) override { return false; }
     virtual bool onKeyEvent(const KeyboardEvent& keyEvent) override { return false; }
 
 private:
-    ReSTIRGIPass(std::shared_ptr<Device> pDevice) : RenderPass(std::move(pDevice)) {}
+    ReSTIRGIPass(std::shared_ptr<Device> pDevice, const Dictionary& dict);
     void parseDictionary(const Dictionary& dict);
 
-    void initialSampling(RenderContext* pRenderContext, const RenderData& renderData);
-    void temporalResampling(RenderContext* pRenderContext, const RenderData& renderData);
+    void initialSampling(
+        RenderContext* pRenderContext,
+        const RenderData& renderData,
+        const Texture::SharedPtr& pVBuffer,
+        const Texture::SharedPtr& pNormal
+    );
+    void temporalResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pMotionVector);
     void spatialResampling(RenderContext* pRenderContext, const RenderData& renderData);
+    void finalShading(RenderContext* pRenderContext, const RenderData& renderData);
+    void endFrame();
 
     Scene::SharedPtr mpScene;
 
     ComputePass::SharedPtr mpInitialSamplingPass;
     ComputePass::SharedPtr mpTemporalResamplingPass;
     ComputePass::SharedPtr mpSpatialResamplingPass;
+    ComputePass::SharedPtr mpFinalShadingPass;
+
+    Buffer::SharedPtr mpInitialSamples;
+    Buffer::SharedPtr mpGIReservoirs;
+
+    SampleGenerator::SharedPtr mpSampleGenerator;
+    uint2 mFrameDim = uint2(0, 0);
+    uint mFrameCount = 0;
+    bool mOptionsChanged = false;
 };

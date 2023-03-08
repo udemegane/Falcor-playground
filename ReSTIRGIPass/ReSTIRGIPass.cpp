@@ -26,38 +26,282 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #include "ReSTIRGIPass.h"
+#include "RenderGraph/RenderPassHelpers.h"
+#include "RenderGraph/RenderPassStandardFlags.h"
+
+using namespace Falcor;
+
+namespace
+{
+const std::string kInitialSamplingFile = "InitialSampling.cs.slang";
+const std::string kTemporalSamplingFIle = "TemporalResampling.cs.slang";
+const std::string kSpatialSamplingFile = "SpatialResampling.cs.slang";
+const std::string kFinalShadingFile = "FinalShading.cs.slang";
+const std::string kShaderModel = "6_5";
+
+const std::string kInputVBuffer = "vBuffer";
+const std::string kInputMotionVector = "motionVector";
+const std::string kInputDepth = "depth";
+const std::string kInputNormal = "normal";
+
+const Falcor::ChannelList kInputChannels = {
+    {kInputVBuffer, "gVBuffer", "Visibility Buffer"},
+    {kInputMotionVector, "gMotionVector", "Motion Vector"},
+    {kInputDepth, "gDepth", "Depth"},
+    {kInputNormal, "gNormal", "Surface Normal"},
+};
+
+const Falcor::ChannelList kOutputChannels = {
+    {"color", "gColor", "Color", true, ResourceFormat::RGBA32Float},
+    {"diffuseRadiance", "gDiffuseRadiance", "", true, ResourceFormat::RGBA32Float},
+    {"specularRadiance", "gSpecularRadiance", "", true, ResourceFormat::RGBA32Float},
+};
+
+} // namespace
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
     registry.registerClass<RenderPass, ReSTIRGIPass>();
 }
 
+ReSTIRGIPass::ReSTIRGIPass(std::shared_ptr<Device> pDevice, const Dictionary& dict) : RenderPass(std::move(pDevice))
+{
+    parseDictionary(dict);
+    mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_DEFAULT);
+    if (!mpDevice->isFeatureSupported(Device::SupportedFeatures::RaytracingTier1_1))
+        logError("Inline Raytracing is not supported on this device.");
+}
+
 ReSTIRGIPass::SharedPtr ReSTIRGIPass::create(std::shared_ptr<Device> pDevice, const Dictionary& dict)
 {
-    SharedPtr pPass = SharedPtr(new ReSTIRGIPass(std::move(pDevice)));
+    SharedPtr pPass = SharedPtr(new ReSTIRGIPass(std::move(pDevice), dict));
     return pPass;
 }
 
 Dictionary ReSTIRGIPass::getScriptingDictionary()
 {
-    return Dictionary();
+    Dictionary d;
+    // TODO: create dictionary members for options
+    return d;
+}
+
+void ReSTIRGIPass::parseDictionary(const Dictionary& dict)
+{
+    for (const auto& [k, v] : dict)
+    {
+        // TODO: assign options
+    }
+}
+
+void ReSTIRGIPass::compile(RenderContext* pRenderContext, const CompileData& compileData)
+{
+    mFrameDim = compileData.defaultTexDims;
 }
 
 RenderPassReflection ReSTIRGIPass::reflect(const CompileData& compileData)
 {
     // Define the required resources here
     RenderPassReflection reflector;
-    //reflector.addOutput("dst");
-    //reflector.addInput("src");
+    addRenderPassInputs(reflector, kInputChannels);
+    addRenderPassOutputs(reflector, kOutputChannels);
     return reflector;
+}
+
+void ReSTIRGIPass::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene)
+{
+    mFrameCount = 0;
+    mpScene = pScene;
+    mpInitialSamplingPass = nullptr;
+    mpTemporalResamplingPass = nullptr;
+    mpSpatialResamplingPass = nullptr;
+    if (mpScene)
+    {
+    }
 }
 
 void ReSTIRGIPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    if (!mpScene)
+    {
+        clearRenderPassChannels(pRenderContext, kOutputChannels, renderData);
+        return;
+    }
+
+    auto& dict = renderData.getDictionary();
+    if (mOptionsChanged)
+    {
+        auto flags = dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None);
+        dict[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
+        mOptionsChanged = false;
+    }
+
+    if (mpScene->getRenderSettings().useEmissiveLights)
+    {
+        mpScene->getLightCollection(pRenderContext);
+    }
+
+    const auto& pVBuffer = renderData.getTexture(kInputVBuffer);
+    const auto& pNormal = renderData.getTexture(kInputNormal);
+    const auto& pMVec = renderData.getTexture(kInputMotionVector);
+
+    initialSampling(pRenderContext, renderData, pVBuffer, pNormal);
+    temporalResampling(pRenderContext, renderData, pMVec);
+    spatialResampling(pRenderContext, renderData);
+    finalShading(pRenderContext, renderData);
+    endFrame();
     // renderData holds the requested resources
     // auto& pTexture = renderData.getTexture("src");
 }
 
-void ReSTIRGIPass::renderUI(Gui::Widgets& widget)
+void ReSTIRGIPass::initialSampling(
+    RenderContext* pRenderContext,
+    const RenderData& renderData,
+    const Texture::SharedPtr& pVBuffer,
+    const Texture::SharedPtr& pNormal
+)
 {
+    FALCOR_ASSERT(pVBuffer);
+    FALCOR_ASSERT(pNormal);
+
+    if (!mpInitialSamplingPass)
+    {
+        Program::Desc desc;
+        desc.addShaderModules(mpScene->getShaderModules());
+        desc.addShaderLibrary(kInitialSamplingFile).setShaderModel(kShaderModel).csEntry("main");
+        desc.addTypeConformances(mpScene->getTypeConformances());
+
+        auto defines = mpScene->getSceneDefines();
+        FALCOR_ASSERT(mpSampleGenerator);
+        defines.add(mpSampleGenerator->getDefines());
+
+        mpInitialSamplingPass = ComputePass::create(mpDevice, desc, defines, true);
+    }
+    FALCOR_ASSERT(mpInitialSamplingPass);
+
+    auto var = mpInitialSamplingPass->getRootVar();
+
+    if (!mpInitialSamples)
+    {
+        uint32_t frameDim1D = mFrameDim.x * mFrameDim.y;
+        mpInitialSamples = Buffer::createStructured(
+            mpDevice.get(), var["initSamples"], frameDim1D, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+            Buffer::CpuAccess::None, nullptr, false
+        );
+    }
+    var["initSamples"] = mpInitialSamples;
+
+    var["CB"]["gFrameCount"] = mFrameCount;
+    var["CB"]["gFrameDim"] = mFrameDim;
+    var["gVBuffer"] = pVBuffer;
+    var["gNormal"] = pNormal;
+
+    mpSampleGenerator->setShaderData(var);
+    mpScene->setRaytracingShaderData(pRenderContext, var);
+    mpInitialSamplingPass->execute(pRenderContext, {mFrameDim, 1u});
 }
+
+void ReSTIRGIPass::temporalResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pMotionVector)
+{
+    FALCOR_ASSERT(pMotionVector);
+    if (!mpTemporalResamplingPass)
+    {
+        Program::Desc desc;
+        desc.addShaderModules(mpScene->getShaderModules());
+        desc.addShaderLibrary(kTemporalSamplingFIle).setShaderModel(kShaderModel).csEntry("main");
+        desc.addTypeConformances(mpScene->getTypeConformances());
+
+        auto defines = mpScene->getSceneDefines();
+        defines.add(mpSampleGenerator->getDefines());
+        mpTemporalResamplingPass = ComputePass::create(mpDevice, desc, defines, true);
+    }
+    FALCOR_ASSERT(mpTemporalResamplingPass);
+    auto var = mpTemporalResamplingPass->getRootVar();
+
+    if (!mpGIReservoirs)
+    {
+        uint32_t reservoirCounts = mFrameDim.x * mFrameDim.y;
+        mpGIReservoirs = Buffer::createStructured(
+            mpDevice.get(), var["GIReservoirs"], reservoirCounts, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+            Buffer::CpuAccess::None, nullptr, false
+        );
+    }
+    FALCOR_ASSERT(mpInitialSamples);
+    var["initSamples"] = mpInitialSamples;
+    var["giReservoirs"] = mpGIReservoirs;
+
+    var["CB"]["gFrameCount"] = mFrameCount;
+    var["CB"]["gFrameDim"] = mFrameDim;
+
+    var["gMotionVector"] = pMotionVector;
+
+    var["gScene"] = mpScene->getParameterBlock();
+    mpSampleGenerator->setShaderData(var);
+    mpTemporalResamplingPass->execute(pRenderContext, {mFrameDim, 1u});
+}
+
+void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    //    FALCOR_ASSERT();
+    if (!mpSpatialResamplingPass)
+    {
+        Program::Desc desc;
+        desc.addShaderModules(mpScene->getShaderModules());
+        desc.addShaderLibrary(kSpatialSamplingFile).setShaderModel(kShaderModel).csEntry("main");
+        desc.addTypeConformances(mpScene->getTypeConformances());
+
+        auto defines = mpScene->getSceneDefines();
+        mpSpatialResamplingPass = ComputePass::create(mpDevice, desc, defines, true);
+    }
+    FALCOR_ASSERT(mpSpatialResamplingPass);
+    auto var = mpSpatialResamplingPass->getRootVar();
+    FALCOR_ASSERT(mpGIReservoirs);
+    var["giReservoirs"] = mpGIReservoirs;
+
+    var["CB"]["gFrameCount"] = mFrameCount;
+    var["CB"]["gFrameDim"] = mFrameDim;
+
+    var["gScene"] = mpScene->getParameterBlock();
+
+    mpSampleGenerator->setShaderData(var);
+    mpSpatialResamplingPass->execute(pRenderContext, {mFrameDim, 1u});
+}
+
+void ReSTIRGIPass::finalShading(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    if (!mpFinalShadingPass)
+    {
+        Program::Desc desc;
+        desc.addShaderModules(mpScene->getShaderModules());
+        desc.addShaderLibrary(kFinalShadingFile).setShaderModel(kShaderModel).csEntry("main");
+        auto defines = mpScene->getSceneDefines();
+        // defines.add()
+        defines.add(getValidResourceDefines(kOutputChannels, renderData));
+        mpFinalShadingPass = ComputePass::create(mpDevice, desc, defines, true);
+    }
+
+    mpFinalShadingPass->getProgram()->addDefines(getValidResourceDefines(kOutputChannels, renderData));
+    auto var = mpFinalShadingPass->getRootVar();
+    FALCOR_ASSERT(mpGIReservoirs);
+
+    var["GIReservoirs"] = mpGIReservoirs;
+
+    var["CB"]["gFrameCount"] = mFrameCount;
+    var["CB"]["gFrameDim"] = mFrameDim;
+    var["gScene"] = mpScene->getParameterBlock();
+    
+    auto bind = [&](const ChannelDesc& channel)
+    {
+        Texture::SharedPtr pTex = renderData.getTexture(channel.name);
+        var[channel.texname] = pTex;
+    };
+    for (const auto& channel : kOutputChannels)
+        bind(channel);
+    mpFinalShadingPass->execute(pRenderContext, {mFrameDim, 1u});
+}
+
+void ReSTIRGIPass::endFrame()
+{
+    mFrameCount++;
+}
+
+void ReSTIRGIPass::renderUI(Gui::Widgets& widget) {}
