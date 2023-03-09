@@ -61,11 +61,17 @@ private:
         RenderContext* pRenderContext,
         const RenderData& renderData,
         const Texture::SharedPtr& pVBuffer,
-        const Texture::SharedPtr& pNormal
+        const Texture::SharedPtr& pNormal,
+        const Texture::SharedPtr& pNoiseTexture
     );
-    void temporalResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pMotionVector);
-    void spatialResampling(RenderContext* pRenderContext, const RenderData& renderData);
-    void finalShading(RenderContext* pRenderContext, const RenderData& renderData);
+    void temporalResampling(
+        RenderContext* pRenderContext,
+        const RenderData& renderData,
+        const Texture::SharedPtr& pMotionVector,
+        const Texture::SharedPtr& pNoiseTexture
+    );
+    void spatialResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pNoiseTexture);
+    void finalShading(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pNoiseTexture);
     void endFrame();
 
     Scene::SharedPtr mpScene;
@@ -78,8 +84,11 @@ private:
     Buffer::SharedPtr mpInitialSamples;
     Buffer::SharedPtr mpGIReservoirs;
 
+    Texture::SharedPtr mpIrradianceCache;
+
     SampleGenerator::SharedPtr mpSampleGenerator;
     uint2 mFrameDim = uint2(0, 0);
+    uint2 mNoiseDim = uint2(0, 0);
     uint mFrameCount = 0;
     bool mOptionsChanged = false;
 };

@@ -6,15 +6,17 @@ import Scene.HitInfo;
 import GIReservoir;
 
 Texture2D<float4> gMotionVector;
+Texture2D<float4> gNoise;
 
 RWStructuredBuffer<GISample> initSamples;
 RWStructuredBuffer<GIReservoir> giReservoirs;
 
-ParameterBlock<Scene> gScene;
 
 cbuffer CB{
     uint gFrameCount;
     uint2 gFrameDim;
+    uint2 gNoiseTexDim;
+
 }
 
 

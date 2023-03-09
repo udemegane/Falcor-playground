@@ -33,22 +33,24 @@ using namespace Falcor;
 
 namespace
 {
-const std::string kInitialSamplingFile = "InitialSampling.cs.slang";
-const std::string kTemporalSamplingFIle = "TemporalResampling.cs.slang";
-const std::string kSpatialSamplingFile = "SpatialResampling.cs.slang";
-const std::string kFinalShadingFile = "FinalShading.cs.slang";
+const std::string kInitialSamplingFile = "RenderPasses/ReSTIRGIPass/InitialSampling.cs.slang";
+const std::string kTemporalSamplingFIle = "RenderPasses/ReSTIRGIPass/TemporalResampling.cs.slang";
+const std::string kSpatialSamplingFile = "RenderPasses/ReSTIRGIPass/SpatialResampling.cs.slang";
+const std::string kFinalShadingFile = "RenderPasses/ReSTIRGIPass/FinalShading.cs.slang";
 const std::string kShaderModel = "6_5";
 
 const std::string kInputVBuffer = "vBuffer";
 const std::string kInputMotionVector = "motionVector";
 const std::string kInputDepth = "depth";
 const std::string kInputNormal = "normal";
+const std::string kInputNoise = "noiseTex";
 
 const Falcor::ChannelList kInputChannels = {
     {kInputVBuffer, "gVBuffer", "Visibility Buffer"},
     {kInputMotionVector, "gMotionVector", "Motion Vector"},
     {kInputDepth, "gDepth", "Depth"},
     {kInputNormal, "gNormal", "Surface Normal"},
+    {kInputNoise, "gNoiseTex", "Noise Texture"},
 };
 
 const Falcor::ChannelList kOutputChannels = {
@@ -114,6 +116,7 @@ void ReSTIRGIPass::setScene(RenderContext* pRenderContext, const Scene::SharedPt
     mpInitialSamplingPass = nullptr;
     mpTemporalResamplingPass = nullptr;
     mpSpatialResamplingPass = nullptr;
+    mpFinalShadingPass = nullptr;
     if (mpScene)
     {
     }
@@ -143,11 +146,14 @@ void ReSTIRGIPass::execute(RenderContext* pRenderContext, const RenderData& rend
     const auto& pVBuffer = renderData.getTexture(kInputVBuffer);
     const auto& pNormal = renderData.getTexture(kInputNormal);
     const auto& pMVec = renderData.getTexture(kInputMotionVector);
+    const auto& pNoise = renderData.getTexture(kInputNoise);
+    FALCOR_ASSERT(pNoise);
+    mNoiseDim = {pNoise.get()->getHeight(), pNoise.get()->getWidth()};
 
-    initialSampling(pRenderContext, renderData, pVBuffer, pNormal);
-    temporalResampling(pRenderContext, renderData, pMVec);
-    spatialResampling(pRenderContext, renderData);
-    finalShading(pRenderContext, renderData);
+    initialSampling(pRenderContext, renderData, pVBuffer, pNormal, pNoise);
+    temporalResampling(pRenderContext, renderData, pMVec, pNoise);
+    spatialResampling(pRenderContext, renderData, pNoise);
+    finalShading(pRenderContext, renderData, pNoise);
     endFrame();
     // renderData holds the requested resources
     // auto& pTexture = renderData.getTexture("src");
@@ -157,7 +163,8 @@ void ReSTIRGIPass::initialSampling(
     RenderContext* pRenderContext,
     const RenderData& renderData,
     const Texture::SharedPtr& pVBuffer,
-    const Texture::SharedPtr& pNormal
+    const Texture::SharedPtr& pNormal,
+    const Texture::SharedPtr& pNoiseTexture
 )
 {
     FALCOR_ASSERT(pVBuffer);
@@ -188,19 +195,34 @@ void ReSTIRGIPass::initialSampling(
             Buffer::CpuAccess::None, nullptr, false
         );
     }
+    if (!mpIrradianceCache)
+    {
+        mpIrradianceCache = Texture::create2D(
+            mpDevice.get(), (uint32_t)mFrameDim.x, (uint32_t)mFrameDim.y, ResourceFormat::RGBA32Float, 1, 1, nullptr,
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
+        );
+    }
     var["initSamples"] = mpInitialSamples;
+    var["gIrradiance"] = mpIrradianceCache;
+    var["gVBuffer"] = pVBuffer;
+    var["gNormal"] = pNormal;
+    var["gNoise"] = pNoiseTexture;
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = mFrameDim;
-    var["gVBuffer"] = pVBuffer;
-    var["gNormal"] = pNormal;
+    var["CB"]["gNoiseTexDim"] = mNoiseDim;
 
     mpSampleGenerator->setShaderData(var);
     mpScene->setRaytracingShaderData(pRenderContext, var);
     mpInitialSamplingPass->execute(pRenderContext, {mFrameDim, 1u});
 }
 
-void ReSTIRGIPass::temporalResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pMotionVector)
+void ReSTIRGIPass::temporalResampling(
+    RenderContext* pRenderContext,
+    const RenderData& renderData,
+    const Texture::SharedPtr& pMotionVector,
+    const Texture::SharedPtr& pNoiseTexture
+)
 {
     FALCOR_ASSERT(pMotionVector);
     if (!mpTemporalResamplingPass)
@@ -221,16 +243,19 @@ void ReSTIRGIPass::temporalResampling(RenderContext* pRenderContext, const Rende
     {
         uint32_t reservoirCounts = mFrameDim.x * mFrameDim.y;
         mpGIReservoirs = Buffer::createStructured(
-            mpDevice.get(), var["GIReservoirs"], reservoirCounts, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+            mpDevice.get(), var["giReservoirs"], reservoirCounts, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
             Buffer::CpuAccess::None, nullptr, false
         );
     }
     FALCOR_ASSERT(mpInitialSamples);
     var["initSamples"] = mpInitialSamples;
     var["giReservoirs"] = mpGIReservoirs;
+    var["gMotionVector"] = pMotionVector;
+    var["gNoise"] = pNoiseTexture;
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = mFrameDim;
+    var["CB"]["gNoiseTexDim"] = mNoiseDim;
 
     var["gMotionVector"] = pMotionVector;
 
@@ -239,7 +264,7 @@ void ReSTIRGIPass::temporalResampling(RenderContext* pRenderContext, const Rende
     mpTemporalResamplingPass->execute(pRenderContext, {mFrameDim, 1u});
 }
 
-void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const RenderData& renderData)
+void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pNoiseTexture)
 {
     //    FALCOR_ASSERT();
     if (!mpSpatialResamplingPass)
@@ -257,8 +282,11 @@ void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const Render
     FALCOR_ASSERT(mpGIReservoirs);
     var["giReservoirs"] = mpGIReservoirs;
 
+    var["gNoise"] = pNoiseTexture;
+
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = mFrameDim;
+    var["CB"]["gNoiseTexDim"] = mNoiseDim;
 
     var["gScene"] = mpScene->getParameterBlock();
 
@@ -266,7 +294,7 @@ void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const Render
     mpSpatialResamplingPass->execute(pRenderContext, {mFrameDim, 1u});
 }
 
-void ReSTIRGIPass::finalShading(RenderContext* pRenderContext, const RenderData& renderData)
+void ReSTIRGIPass::finalShading(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pNoiseTexture)
 {
     if (!mpFinalShadingPass)
     {
@@ -282,13 +310,17 @@ void ReSTIRGIPass::finalShading(RenderContext* pRenderContext, const RenderData&
     mpFinalShadingPass->getProgram()->addDefines(getValidResourceDefines(kOutputChannels, renderData));
     auto var = mpFinalShadingPass->getRootVar();
     FALCOR_ASSERT(mpGIReservoirs);
-
-    var["GIReservoirs"] = mpGIReservoirs;
+    FALCOR_ASSERT(mpIrradianceCache);
+    var["giReservoirs"] = mpGIReservoirs;
+    var["gIrradiance"] = mpIrradianceCache;
+    var["gNoise"] = pNoiseTexture;
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = mFrameDim;
+    var["CB"]["gNoiseTexDim"] = mNoiseDim;
+
     var["gScene"] = mpScene->getParameterBlock();
-    
+
     auto bind = [&](const ChannelDesc& channel)
     {
         Texture::SharedPtr pTex = renderData.getTexture(channel.name);

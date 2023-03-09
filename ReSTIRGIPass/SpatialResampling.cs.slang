@@ -7,13 +7,15 @@ import GIReservoir;
 
 
 RWStructuredBuffer<GIReservoir> giReservoirs;
+Texture2D<float4> gNoise;
 
-ParameterBlock<Scene> gScene;
 
 
 cbuffer CB{
     uint gFrameCount;
     uint2 gFrameDim;
+    uint2 gNoiseTexDim;
+
 }
 
 [numthreads(16, 16, 1)]
