@@ -1,7 +1,8 @@
-# add_subdirectory(ReSTIR)
-add_subdirectory(WireframePass)
-
-# add_subdirectory(TinyPathTracer)
 # add_subdirectory(GBufferRasterDebugPass)
-# add_subdirectory(VisibilityRenderPass)
 # add_subdirectory(HybridRaytracing)
+# add_subdirectory(ReSTIR)
+# add_subdirectory(TinyPathTracer)
+# add_subdirectory(VisibilityRenderPass)
+# add_subdirectory(CustomVBuffer)
+add_subdirectory(ReSTIRGIPass)
+add_subdirectory(WireframePass)
