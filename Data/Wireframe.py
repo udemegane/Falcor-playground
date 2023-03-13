@@ -1,13 +1,12 @@
 from falcor import *
 
 def render_graph_WireframePass():
-    g = RenderGraph('WireframePass')
-    #loadRenderPassLibrary('WireframePass.dll')
-    Wireframe = createPass('WireframePass')
+    g = RenderGraph('Wireframe')
+    WireframePass = createPass('WireframePass')
     g.addPass(WireframePass, 'WireframePass')
     g.markOutput('WireframePass.output')
     return g
 
-WireframePass = render_graph_WireframePass()
-try: m.addGraph(WireframePass)
+Wireframe= render_graph_WireframePass()
+try: m.addGraph(Wireframe)
 except NameError: None
