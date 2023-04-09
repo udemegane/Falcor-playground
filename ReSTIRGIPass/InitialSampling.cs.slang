@@ -16,6 +16,8 @@ import Rendering.Utils.PixelStats;
 
 import GIReservoir;
 
+static const float prr = 0.25f;
+
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float3> gNormal;
 Texture2D<float3> gPositionW;
@@ -29,6 +31,16 @@ cbuffer CB
     uint gFrameCount;
     uint2 gFrameDim;
     uint2 gNoiseTexDim;
+}
+
+struct ScatterRayData
+{
+    float3 radiance;
+    bool terminated;
+    float3 throughput;
+    float3 origin;
+    float3 direction;
+    uint length;
 }
 
 ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const float3 rayDir, const ITextureSampler lod)
@@ -88,31 +100,59 @@ bool traceVisibilityRay(const Ray ray)
     return srq.traceVisibilityRay(ray, RAY_FLAG_NONE, 0xff);
 }
 
-float3 evalDirectIrradiance(ShadingData sd, float4 rand, SampleGenerator sg)
+float3 evalDirectAnalytic(const ShadingData sd, const IMaterialInstance mi, float4 rand, const SampleGenerator sg)
 {
     AnalyticLightSample als;
-    TriangleLightSample tls;
-    float3 irrTri = 0.f;
-    float3 irr = 0.f;
-
-    // uint triLightCount = gScene.lightCollection.getActiveTriangleCount();
-    // const uint triId = gScene.lightCollection.getActiveTriangleIndex(
-    //     min(uint(rand.x*triLightCount), triLightCount-1)
-    //     );
-    // if(sampleTriangle(sd.posW, triId, rand.yz, tls))
-    //     irrTri = (tls.pdf>0.f?tls.Le/tls.pdf:float3(0.f));
 
     uint lightCount = gScene.lightCount;
     const uint id = min(uint(rand.x * lightCount), lightCount - 1);
-    if (sampleLight(sd.posW, gScene.getLight(id), sg, als))
-        irr = als.Li * lightCount;
+    float invPdf = lightCount;
+
+    if (!sampleLight(sd.posW, gScene.getLight(id), sg, als))
+        return float3(0.f);
+
     float3 n = dot(sd.faceN, als.dir) >= 0.f ? sd.faceN : -sd.faceN;
     float3 origin = computeRayOrigin(sd.posW, n);
     Ray ray = Ray(origin, als.dir, 0.0f, als.distance);
     if (!traceVisibilityRay(ray))
-        irr = 0.f;
+        return float3(0.f);
 
-    return irr;
+    return mi.eval(sd, als.dir, sg) * als.Li * invPdf;
+}
+
+bool generateScatterRay(
+    const ShadingData sd,
+    const IMaterialInstance mi,
+    const float3 rayOrigin,
+    inout ScatterRayData rayData,
+    const float p,
+    const float u
+)
+{
+    if (u > p)
+    {
+        rayData.terminated = true;
+        return false;
+    }
+    BSDFSample bsdfSample;
+    if (mi.sample(sd, rayData.sg, bsdfSample, kUseImportanceSampling))
+    {
+        rayData.origin = rayOrigin;
+        if (bsdfSample.isLobe(LobeType::Transmission))
+        {
+            rayData.origin = sd.computeNewRayOrigin(false);
+        }
+        rayData.direction = bsdfSample.wo;
+        rayData.throughput *= bsdfSample.weight;
+        return any(rayData.throughput > 0.f);
+    }
+
+    return false;
+}
+
+float pathTrace(ShadingData sd, SampleGenerator sg)
+{
+    AnalyticLightSample als;
 }
 
 void sampling(uint2 pixel)
@@ -123,17 +163,18 @@ void sampling(uint2 pixel)
     float3 randVec = sampleNext3D(sg);
     randVec = dot(gNormal[pixel].xyz, randVec) > 0 ? randVec : -randVec;
 
-    {
-        const float3 primaryRayOrigin = gScene.camera.getPosition();
-        const float3 primaryRayDir = gScene.camera.computeRayPinhole(pixel, gFrameDim).dir;
-        const HitInfo hit = HitInfo(gVBuffer[pixel]);
-        if (hit.isValid())
-        {
-            let lod = ExplicitLodTextureSampler(0.f);
-            ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
-            gIrradiance[pixel] = float4(evalDirectIrradiance(sd, float4(randVec.x, randVec.y, randVec.z, 1.0f), sg), 1.0f);
-        }
-    }
+    // {
+    //     const float3 primaryRayOrigin = gScene.camera.getPosition();
+    //     const float3 primaryRayDir = gScene.camera.computeRayPinhole(pixel, gFrameDim).dir;
+    //     const HitInfo hit = HitInfo(gVBuffer[pixel]);
+    //     if (hit.isValid())
+    //     {
+    //         let lod = ExplicitLodTextureSampler(0.f);
+    //         ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
+    //         gIrradiance[pixel] = float4(evalDirectIrradiance(sd, float4(randVec.x, randVec.y, randVec.z, 1.0f), sg), 1.0f);
+
+    //     }
+    // }
 
     {
         HitInfo hit;
