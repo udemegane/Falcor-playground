@@ -117,35 +117,74 @@ bool traceVisibilityRay(const Ray ray)
 
 float3 evalDirectAnalytic(const ShadingData sd, const IMaterialInstance mi, inout SampleGenerator sg)
 {
-    AnalyticLightSample als;
-
-    uint lightCount = gScene.lightCount;
-    const float u = sampleNext1D(sg);
-    const uint id = min(uint(u * lightCount), lightCount - 1);
-    float invPdf = lightCount;
-
-    if (!sampleLight(sd.posW, gScene.getLight(id), sg, als))
+    const uint lightCount = gScene.getLightCount();
+    if (lightCount == 0)
         return float3(0.f);
 
+    // Pick one of the analytic light sources randomly with equal probability.
+    const uint lightIndex = min(uint(sampleNext1D(sg) * lightCount), lightCount - 1);
+    float invPdf = lightCount; // Light selection pdf = 1.0 / lightCount.
+
+    // Sample local light source.
+    AnalyticLightSample ls;
+    if (!sampleLight(sd.posW, gScene.getLight(lightIndex), sg, ls))
+        return float3(0.f);
+
+    // Reject sample if not in the hemisphere of a BSDF lobe.
     const uint lobeTypes = mi.getLobeTypes(sd);
     const bool hasReflection = lobeTypes & uint(LobeType::Reflection);
     const bool hasTransmission = lobeTypes & uint(LobeType::Transmission);
-
-    //
-    if (dot(als.dir, sd.N) <= kMinCosTheta && !hasTransmission)
+    if (dot(ls.dir, sd.N) <= kMinCosTheta && !hasTransmission)
         return float3(0.f);
-    //
-    if (dot(als.dir, sd.N) >= -kMinCosTheta && !hasReflection)
+    if (dot(ls.dir, sd.N) >= -kMinCosTheta && !hasReflection)
         return float3(0.f);
 
-    float3 n = dot(sd.faceN, als.dir) >= 0.f ? sd.faceN : -sd.faceN;
-    float3 origin = computeRayOrigin(sd.posW, n);
-    Ray ray = Ray(origin, als.dir, 0.0f, als.distance);
+    // Get origin with offset applied in direction of the geometry normal to avoid self-intersection.
+    const float3 origin = computeRayOrigin(sd.posW, dot(sd.faceN, ls.dir) >= 0.f ? sd.faceN : -sd.faceN);
+
+    // Test visibility by tracing a shadow ray.
+    Ray ray = Ray(origin, ls.dir, 0.0f, ls.distance);
     if (!traceVisibilityRay(ray))
         return float3(0.f);
+    // bool V = traceShadowRay(origin, ls.dir, ls.distance);
+    // if (!V)
+    //     return float3(0.f);
 
-    return mi.eval(sd, als.dir, sg) * als.Li * invPdf;
+    // Evaluate contribution.
+    return mi.eval(sd, ls.dir, sg) * ls.Li * invPdf;
 }
+
+// float3 evalDirectAnalytic(const ShadingData sd, const IMaterialInstance mi, inout SampleGenerator sg)
+// {
+//     AnalyticLightSample als;
+
+//     uint lightCount = gScene.lightCount;
+//     const float u = sampleNext1D(sg);
+//     const uint id = min(uint(u * lightCount), lightCount - 1);
+//     float invPdf = lightCount;
+
+//     if (!sampleLight(sd.posW, gScene.getLight(id), sg, als))
+//         return float3(0.f);
+
+//     const uint lobeTypes = mi.getLobeTypes(sd);
+//     const bool hasReflection = lobeTypes & uint(LobeType::Reflection);
+//     const bool hasTransmission = lobeTypes & uint(LobeType::Transmission);
+
+//     // //
+//     // if (dot(als.dir, sd.N) <= kMinCosTheta && !hasTransmission)
+//     //     return float3(0.f);
+//     // //
+//     // if (dot(als.dir, sd.N) >= -kMinCosTheta && !hasReflection)
+//     //     return float3(0.f);
+
+//     float3 n = dot(sd.faceN, als.dir) >= 0.f ? sd.faceN : -sd.faceN;
+//     float3 origin = computeRayOrigin(sd.posW, n);
+//     Ray ray = Ray(origin, als.dir, 0.0f, als.distance);
+//     // if (!traceVisibilityRay(ray))
+//     //     return float3(0.f);
+
+//     return mi.eval(sd, als.dir, sg) * als.Li * invPdf;
+// }
 
 bool generateScatterRay(const ShadingData sd, const IMaterialInstance mi, const float3 rayOrigin, inout ScatterRayData rayData, )
 {
@@ -219,13 +258,26 @@ float3 pathTrace(const ShadingData sd, ScatterRayData rayData, inout SampleGener
 //     AnalyticLightSample als;
 // }
 
-void sampling(uint2 pixel)
+void sampling(uint2 pixel, uint2 screen)
 {
     // uint2 noiseSeed = {(pixel.x+gFrameCount)%gNoiseTexDim.x, pixel.y%gNoiseTexDim.y};
     // float3 randVec = gNoise[noiseSeed].xyz;
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
     float3 randVec = sampleNext3D(sg);
     randVec = dot(gNormal[pixel].xyz, randVec) > 0 ? randVec : -randVec;
+    float3 color = float3(0.f);
+
+    float3 primaryRayDir = gScene.camera.computeRayPinhole(pixel, screen, false).dir;
+    float3 primaryRayOrigin = gScene.camera.getPosition();
+    const HitInfo hit = HitInfo(gVBuffer[pixel]);
+
+    if (hit.isValid())
+    {
+        let lod = ExplicitLodTextureSampler(0.f);
+        ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
+        let mi = gScene.materials.getMaterialInstance(sd, lod);
+        color += evalDirectAnalytic(sd, mi, sg);
+    }
 
     {
         HitInfo hit;
@@ -243,9 +295,10 @@ void sampling(uint2 pixel)
             // eval indirect lighting
             ScatterRayData rayData = ScatterRayData(sg);
             bool isValidSample = generateScatterRay(sd, mi, sd.computeNewRayOrigin(), rayData);
-            gIrradiance[pixel] = float4(pathTrace(sd, rayData, sg), 1.0f); // float4(isValidSample ?  : float3(0.f), 1.0f);
+            color = pathTrace(sd, rayData, sg); // float4(isValidSample ?  : float3(0.f), 1.0f);
         }
     }
+    gIrradiance[pixel] = float4(color, 1.0f);
 }
 
 [numthreads(16, 16, 1)]
@@ -254,5 +307,5 @@ void main(uint3 groupId: SV_GroupID, uint3 groupThreadId: SV_GroupThreadID, uint
     uint2 pixel = dispatchThreadId.xy;
     if (any(pixel >= gFrameDim))
         return;
-    sampling(pixel);
+    sampling(pixel, gFrameDim);
 }
