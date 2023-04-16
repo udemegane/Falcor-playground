@@ -1,15 +1,20 @@
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 import Scene.Scene;
+import Scene.Shading;
+import Scene.Material.ShadingUtils;
 import Scene.HitInfo;
 import Scene.HitInfoType;
 import Scene.RaytracingInline;
 import Utils.Math.MathHelpers;
 import Utils.Geometry.GeometryHelpers;
 import Utils.Sampling.SampleGenerator;
-import Rendering.Lights.LightHelpers;
+
+import Rendering.Lights.EnvMapSampler;
+import Rendering.Lights.EmissiveLightSampler;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
-import Rendering.Lights.EmissiveLightSamplerInterface;
+import Rendering.Lights.LightHelpers;
+
 import Utils.Debug.PixelDebug;
 
 import Rendering.Utils.PixelStats;
@@ -20,6 +25,9 @@ import GIReservoir;
 static const float prr = 0.25f;
 static const bool kUseImportanceSampling = true;
 static const uint kMaxBounces = 3;
+static const bool kUseEnvLight = true;
+static const bool kUseEmissiveLights = true;
+static const bool kUseAnalyticLights = true;
 
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float3> gNormal;
@@ -55,6 +63,174 @@ struct ScatterRayData
         this.origin = float3(0.f);
         this.direction = float3(0.f);
         this.sg = sg;
+    }
+}
+
+enum class GenericLightType
+{
+    EnvMap,
+    Emissive,
+    Analytic
+}
+struct LightSample
+{
+    float3 Li;
+    float pdf;
+    float3 origin;
+    float distance;
+    float3 dir;
+    uint lightType;
+}
+
+struct LightSampler
+{
+    EmissiveLightSampler emmisiveSampler;
+    EnvMapSampler envmapSampler;
+    __init()
+    {
+        EmissiveLightSampler emissiveSampler;
+        EnvMapSampler envmapSampler;
+        this.emmisiveSampler = emissiveSampler;
+        this.envmapSampler = envmapSampler;
+    }
+}
+
+bool selectLightType(out uint lightType, out float pdf, float rand)
+{
+    float p[3];
+
+    p[0] = kUseEnvLight ? 1.f : 0.f;
+    p[1] = kUseEmissiveLights ? 1.f : 0.f;
+    p[2] = kUseAnalyticLights ? 1.f : 0.f;
+
+    float sum = p[0] + p[1] + p[2];
+    if (sum != 0.f)
+    {
+        float invSum = 1.f / sum;
+        p[0] *= invSum;
+        p[1] *= invSum;
+        p[2] *= invSum;
+    }
+
+    [unroll]
+    for (lightType = 0; lightType < 3; ++lightType)
+    {
+        if (rand < p[lightType])
+        {
+            pdf = p[lightType];
+            return true;
+        }
+        rand -= p[lightType];
+    }
+    return false;
+}
+
+bool generateAnalyticLightsSample(const ShadingData sd, inout LightSample ls, inout SampleGenerator sg)
+{
+    ls = {};
+    uint lightCount = gScene.getLightCount();
+    if (!kUseAnalyticLights || lightCount == 0)
+        return false;
+    uint lightIndex = min(uint(sampleNext1D(sg) * lightCount), lightCount - 1);
+    float invPdf = lightCount;
+    AnalyticLightSample als;
+    if (!sampleLight(sd.posW, gScene.getLight(lightIndex), sg, als))
+        return false;
+    ls.Li = als.Li * invPdf;
+    ls.pdf = als.pdf / invPdf;
+    ls.origin = computeRayOrigin(sd.posW, dot(sd.faceN, als.dir) >= 0.f ? sd.faceN : -sd.faceN);
+    ls.distance = als.distance;
+    ls.dir = als.dir;
+
+    return any(ls.Li > 0.f);
+}
+
+bool generateEmissiveLightsSample(
+    const ShadingData sd,
+    const bool upperHemisphere,
+    inout LightSample ls,
+    inout EmissiveLightSampler sampler,
+    inout SampleGenerator sg
+)
+{
+    ls = {};
+    if (!kUseEmissiveLights)
+        return false;
+    TriangleLightSample tls;
+    if (!sampler.sampleLight(sd.posW, sd.N, upperHemisphere, sg, tls))
+        return false;
+    ls.Li = tls.pdf > 0.f ? tls.Le / tls.pdf : float3(0.f);
+    ls.pdf = tls.pdf;
+    ls.origin = computeRayOrigin(sd.posW, dot(sd.faceN, tls.dir) >= 0.f ? sd.faceN : -sd.faceN);
+    float3 toLight = tls.posW - sd.posW;
+    ls.distance = length(toLight);
+    ls.dir = normalize(toLight);
+
+    return any(ls.Li > 0.f);
+}
+
+bool generateEnvLightSample(const ShadingData sd, inout LightSample ls, inout EnvMapSampler sampler, inout SampleGenerator sg)
+{
+    ls = {};
+    if (!kUseEnvLight)
+        return false;
+    EnvMapSample lightSample;
+    if (!sampler.sample(sampleNext2D(sg), lightSample))
+        return false;
+    ls.Li = lightSample.pdf > 0.f ? lightSample.Le / lightSample.pdf : float3(0.f);
+    ls.pdf = lightSample.pdf;
+    ls.origin = computeRayOrigin(sd.posW, dot(sd.faceN, lightSample.dir) >= 0.f ? sd.faceN : -sd.faceN);
+    ls.dir = lightSample.dir;
+    ls.distance = FLT_MAX;
+
+    return any(ls.Li > 0.f);
+}
+
+bool generateLightSample(
+    const ShadingData sd,
+    const uint lobeTypes,
+    inout LightSample ls,
+    inout LightSampler sampler,
+    inout SampleGenerator sg
+)
+{
+    LightSample ls = {};
+    uint lightType;
+    float selectionPdf;
+    if (!selectLightType(lightType, selectionPdf, sampleNext1D(sg)))
+        return false;
+
+    bool valid = false;
+    const bool hasReflection = lobeTypes & uint(LobeType::Reflection);
+    const bool hasTransmission = lobeTypes & uint(LobeType::Transmission);
+
+    switch (lightType)
+    {
+    case (uint)GenericLightType::EnvMap:
+        valid = generateEnvLightSample(sd, ls, sampler.envmapSampler, sg);
+    case (uint)GenericLightType::Emissive:
+        valid = generateEmissiveLightsSample(sd, hasReflection && !hasTransmission, ls, sampler.emmisiveSampler, sg);
+    case (uint)GenericLightType::Analytic:
+        valid = generateAnalyticLightsSample(sd, ls, sg);
+    }
+
+    if (valid)
+    {
+        // Reject Sample when light come from lower-hemisphere to Non-Tranclucent-material
+        if (dot(ls.dir, max(sd.N, sd.faceN)) <= kMinCosTheta && !hasTransmission)
+            return false;
+        // Reject Sample when light come from upper-hemisphere to Non-reflective material
+        if (dot(ls.dir, max(sd.N, sd.faceN)) >= -kMinCosTheta && !hasReflection)
+            return false;
+        ls.lightType = lightType;
+        ls.pdf *= selectionPdf;
+        ls.Li /= selectionPdf;
+
+        return true;
+    }
+    else
+    {
+        return false;
     }
 }
 
@@ -146,9 +322,6 @@ float3 evalDirectAnalytic(const ShadingData sd, const IMaterialInstance mi, inou
     Ray ray = Ray(origin, ls.dir, 0.0f, ls.distance);
     if (!traceVisibilityRay(ray))
         return float3(0.f);
-    // bool V = traceShadowRay(origin, ls.dir, ls.distance);
-    // if (!V)
-    //     return float3(0.f);
 
     // Evaluate contribution.
     return mi.eval(sd, ls.dir, sg) * ls.Li * invPdf;
@@ -186,7 +359,7 @@ float3 evalDirectAnalytic(const ShadingData sd, const IMaterialInstance mi, inou
 //     return mi.eval(sd, als.dir, sg) * als.Li * invPdf;
 // }
 
-bool generateScatterRay(const ShadingData sd, const IMaterialInstance mi, const float3 rayOrigin, inout ScatterRayData rayData, )
+bool prepareScatterRay(const ShadingData sd, const IMaterialInstance mi, const float3 rayOrigin, inout ScatterRayData rayData, )
 {
     BSDFSample bsdfSample;
     if (mi.sample(sd, rayData.sg, bsdfSample, kUseImportanceSampling))
@@ -226,7 +399,7 @@ bool handleHit(const HitInfo hit, inout ScatterRayData rayData)
 
     // add length
     rayOrigin = sd.computeNewRayOrigin();
-    generateScatterRay(sd, mi, rayOrigin, rayData);
+    prepareScatterRay(sd, mi, rayOrigin, rayData);
     if (rayData.terminated == false)
     {
         rayData.length++;
@@ -249,6 +422,10 @@ float3 pathTrace(const ShadingData sd, ScatterRayData rayData, inout SampleGener
         {
             handleHit(hit, rayData);
         }
+        else
+        {
+            rayData.terminated = true;
+        }
     }
     return rayData.radiance;
 }
@@ -266,6 +443,7 @@ void sampling(uint2 pixel, uint2 screen)
     float3 randVec = sampleNext3D(sg);
     randVec = dot(gNormal[pixel].xyz, randVec) > 0 ? randVec : -randVec;
     float3 color = float3(0.f);
+    const bool computeDirect = true;
 
     float3 primaryRayDir = gScene.camera.computeRayPinhole(pixel, screen, false).dir;
     float3 primaryRayOrigin = gScene.camera.getPosition();
@@ -276,9 +454,18 @@ void sampling(uint2 pixel, uint2 screen)
         let lod = ExplicitLodTextureSampler(0.f);
         ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
         let mi = gScene.materials.getMaterialInstance(sd, lod);
-        color += evalDirectAnalytic(sd, mi, sg);
+        if (computeDirect)
+            color += evalDirectAnalytic(sd, mi, sg);
+        ScatterRayData rayData = ScatterRayData(sg);
+        if (prepareScatterRay(sd, mi, sd.computeNewRayOrigin(), rayData))
+        {
+            color += pathTrace(sd, rayData, sg);
+        }
     }
 
+    // compute Indirect Lignting
+
+    if (false)
     {
         HitInfo hit;
         float hitT;
@@ -294,7 +481,7 @@ void sampling(uint2 pixel, uint2 screen)
 
             // eval indirect lighting
             ScatterRayData rayData = ScatterRayData(sg);
-            bool isValidSample = generateScatterRay(sd, mi, sd.computeNewRayOrigin(), rayData);
+            bool isValidSample = prepareScatterRay(sd, mi, sd.computeNewRayOrigin(), rayData);
             color = pathTrace(sd, rayData, sg); // float4(isValidSample ?  : float3(0.f), 1.0f);
         }
     }
