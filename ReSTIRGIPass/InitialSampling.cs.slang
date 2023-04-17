@@ -22,9 +22,10 @@ import Rendering.Utils.PixelStats;
 import GIReservoir;
 
 // あとでマジックナンバーやめる
-static const float prr = 0.25f;
+static const float prr = 0.7f;
+static const float invPrr = 1.0 / prr;
 static const bool kUseImportanceSampling = true;
-static const uint kMaxBounces = 3;
+static const uint kMaxBounces = 10;
 static const bool kUseEnvLight = true;
 static const bool kUseEmissiveLights = true;
 static const bool kUseAnalyticLights = true;
@@ -371,6 +372,7 @@ bool prepareScatterRay(const ShadingData sd, const IMaterialInstance mi, const f
         }
         rayData.direction = bsdfSample.wo;
         rayData.throughput *= bsdfSample.weight;
+
         return any(rayData.throughput > 0.f);
     }
     else
@@ -421,6 +423,11 @@ float3 pathTrace(const ShadingData sd, ScatterRayData rayData, inout SampleGener
         if (traceRayInline(ray, hit, hitT))
         {
             handleHit(hit, rayData);
+            if (sampleNext1D(sg) > prr)
+            {
+                break;
+            }
+            rayData.throughput *= invPrr;
         }
         else
         {
@@ -443,7 +450,7 @@ void sampling(uint2 pixel, uint2 screen)
     float3 randVec = sampleNext3D(sg);
     randVec = dot(gNormal[pixel].xyz, randVec) > 0 ? randVec : -randVec;
     float3 color = float3(0.f);
-    const bool computeDirect = true;
+    const bool computeDirect = false;
 
     float3 primaryRayDir = gScene.camera.computeRayPinhole(pixel, screen, false).dir;
     float3 primaryRayOrigin = gScene.camera.getPosition();
