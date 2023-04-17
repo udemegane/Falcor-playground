@@ -27,6 +27,10 @@
  **************************************************************************/
 #pragma once
 #include "Falcor.h"
+#include "Utils/Sampling/SampleGenerator.h"
+#include "Rendering/Lights/LightBVHSampler.h"
+#include "Rendering/Lights/EmissivePowerSampler.h"
+#include "Rendering/Lights/EnvMapSampler.h"
 
 using namespace Falcor;
 
@@ -82,11 +86,23 @@ private:
     ComputePass::SharedPtr mpFinalShadingPass;
 
     Buffer::SharedPtr mpInitialSamples;
-    Buffer::SharedPtr mpGIReservoirs;
+    Buffer::SharedPtr mpTemporalReservoirs;
+    Buffer::SharedPtr mpSpatialReservoirs;
 
     Texture::SharedPtr mpIrradianceCache;
 
     SampleGenerator::SharedPtr mpSampleGenerator;
+    EnvMapSampler::SharedPtr mpEnvMapSampler;
+    EmissiveLightSampler::SharedPtr mpEmissiveLightSampler;
+
+    bool mVarsChanged=true;
+    bool mOptionChanged=false;
+    bool mUseReSTIR=true;
+    bool mUseReSTIRGI=true;
+    bool mTemporalReuse=true;
+    bool mSpatialReuse=true;
+    float mRussianRouletteProbability=0.25f;
+
     uint2 mFrameDim = uint2(0, 0);
     uint2 mNoiseDim = uint2(0, 0);
     uint mFrameCount = 0;

@@ -239,17 +239,17 @@ void ReSTIRGIPass::temporalResampling(
     FALCOR_ASSERT(mpTemporalResamplingPass);
     auto var = mpTemporalResamplingPass->getRootVar();
 
-    if (!mpGIReservoirs)
+    if (!mpTemporalReservoirs)
     {
         uint32_t reservoirCounts = mFrameDim.x * mFrameDim.y;
-        mpGIReservoirs = Buffer::createStructured(
-            mpDevice.get(), var["giReservoirs"], reservoirCounts, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+        mpTemporalReservoirs = Buffer::createStructured(
+            mpDevice.get(), var["gTemporalReservoirs"], reservoirCounts, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
             Buffer::CpuAccess::None, nullptr, false
         );
     }
     FALCOR_ASSERT(mpInitialSamples);
     var["initSamples"] = mpInitialSamples;
-    var["giReservoirs"] = mpGIReservoirs;
+    var["gTemporalReservoirs"] = mpTemporalReservoirs;
     var["gMotionVector"] = pMotionVector;
     var["gNoise"] = pNoiseTexture;
 
@@ -279,8 +279,16 @@ void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const Render
     }
     FALCOR_ASSERT(mpSpatialResamplingPass);
     auto var = mpSpatialResamplingPass->getRootVar();
-    FALCOR_ASSERT(mpGIReservoirs);
-    var["giReservoirs"] = mpGIReservoirs;
+    FALCOR_ASSERT(mpTemporalReservoirs);
+    if(!mpSpatialReservoirs){
+        uint32_t reservoirCounts=mFrameDim.x*mFrameDim.y;
+        mpSpatialReservoirs = Buffer::createStructured(
+            mpDevice.get(), var["gSpatialReservoirs"], reservoirCounts, ResourceBindFlags::ShaderResource| ResourceBindFlags::UnorderedAccess,
+            Buffer::CpuAccess::None, nullptr, false
+        );
+    }
+    var["gSpatialReservoirs"] = mpSpatialReservoirs;
+    var["gTemporalReservoirs"] = mpTemporalReservoirs;
 
     var["gNoise"] = pNoiseTexture;
 
@@ -309,9 +317,9 @@ void ReSTIRGIPass::finalShading(RenderContext* pRenderContext, const RenderData&
 
     mpFinalShadingPass->getProgram()->addDefines(getValidResourceDefines(kOutputChannels, renderData));
     auto var = mpFinalShadingPass->getRootVar();
-    FALCOR_ASSERT(mpGIReservoirs);
+    FALCOR_ASSERT(mpTemporalReservoirs);
     FALCOR_ASSERT(mpIrradianceCache);
-    var["giReservoirs"] = mpGIReservoirs;
+    var["gTemporalReservoirs"] = mpTemporalReservoirs;
     var["gIrradiance"] = mpIrradianceCache;
     var["gNoise"] = pNoiseTexture;
 
