@@ -133,7 +133,6 @@ ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const flo
         materialID = gScene.getMaterialID(sdfGridHit.instanceID);
     }
 #endif
-
     ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -rayDir, lod);
 
     return sd;
@@ -252,10 +251,15 @@ bool generateLightSample(
     {
     case (uint)GenericLightType::EnvMap:
         valid = generateEnvLightSample(sd, ls, sampler.envmapSampler, sg);
+        break;
     case (uint)GenericLightType::Emissive:
         valid = generateEmissiveLightsSample(sd, hasReflection && !hasTransmission, ls, sampler.emmisiveSampler, sg);
+        break;
     case (uint)GenericLightType::Analytic:
         valid = generateAnalyticLightsSample(sd, ls, sg);
+        break;
+    default:
+        valid = false;
     }
 
     if (valid)
@@ -285,11 +289,11 @@ bool generateLightSample(
     \return True if ray get a hit.
 */
 
-bool traceRayInline(const Ray ray, out HitInfo hit, out float hitT)
+bool traceRayInline(const Ray ray, inout HitInfo hit, inout float hitT)
 {
     logTraceRay(PixelStatsRayType::ClosestHit);
     SceneRayQuery<true> srq;
-    return srq.traceRay(ray, hit, hitT, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff);
+    return srq.traceRay(ray, hit, hitT, RAY_FLAG_NONE, 0xff);
 }
 
 /**
@@ -301,7 +305,7 @@ bool traceVisibilityRay(const Ray ray)
 {
     logTraceRay(PixelStatsRayType::Visibility);
     SceneRayQuery<true> srq;
-    return srq.traceVisibilityRay(ray, RAY_FLAG_NONE, 0xff);
+    return srq.traceVisibilityRay(ray, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff);
 }
 
 /** TODO: add support env light and mesh light.
@@ -325,12 +329,16 @@ float3 evalDirectAnalytic(const ShadingData sd, const IMaterialInstance mi, inou
     // Sample local light source.
     AnalyticLightSample ls;
     if (!sampleLight(sd.posW, gScene.getLight(lightIndex), sg, ls))
-        return float3(0.f);
+        return float3(0.0f, 0.0f, 0.f);
 
     // Reject sample if not in the hemisphere of a BSDF lobe.
     const uint lobeTypes = mi.getLobeTypes(sd);
     const bool hasReflection = lobeTypes & uint(LobeType::Reflection);
     const bool hasTransmission = lobeTypes & uint(LobeType::Transmission);
+    const float3 n = sd.N;
+    max(sd.N, sd.faceN);
+    // return n;
+    // const float dot = ls.dir.x * n.x + ls.dir.y * n.y + ls.dir.z * n.z;
     if (dot(ls.dir, sd.N) <= kMinCosTheta && !hasTransmission)
         return float3(0.f);
     if (dot(ls.dir, sd.N) >= -kMinCosTheta && !hasReflection)
@@ -338,14 +346,15 @@ float3 evalDirectAnalytic(const ShadingData sd, const IMaterialInstance mi, inou
 
     // Get origin with offset applied in direction of the geometry normal to avoid self-intersection.
     const float3 origin = computeRayOrigin(sd.posW, dot(sd.faceN, ls.dir) >= 0.f ? sd.faceN : -sd.faceN);
+    // computeRayOrigin(sd.posW, dot(sd.faceN, ls.dir) >= 0.f ? sd.faceN : -sd.faceN);
 
     // Test visibility by tracing a shadow ray.
     Ray ray = Ray(origin, ls.dir, 0.0f, ls.distance);
     if (!traceVisibilityRay(ray))
-        return float3(0.f);
+        return float3(0.0f);
 
     // Evaluate contribution.
-    return mi.eval(sd, ls.dir, sg) * ls.Li * invPdf;
+    return (mi.eval(sd, ls.dir, sg) * ls.Li * invPdf);
 }
 
 /**
@@ -389,10 +398,11 @@ bool handleHit(const HitInfo hit, inout ScatterRayData rayData)
     let lod = ExplicitLodTextureSampler(0.f);
     ShadingData sd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
     let mi = gScene.materials.getMaterialInstance(sd, lod);
-    float3 rayOrigin;
 
     // eval radiance
+    // if (kUseEmissiveLights)
     rayData.radiance += rayData.throughput * (mi.getProperties(sd).emission);
+
     if (rayData.length >= kMaxBounces)
     {
         rayData.terminated = true;
@@ -402,7 +412,9 @@ bool handleHit(const HitInfo hit, inout ScatterRayData rayData)
     rayData.radiance += rayData.throughput * evalDirectAnalytic(sd, mi, rayData.sg);
 
     // add length
-    prepareScatterRay(sd, mi, sd.computeNewRayOrigin(), rayData);
+    float3 rayOrigin = hit.getType() == HitType::Curve ? sd.posW - sd.curveRadius * sd.N : sd.computeNewRayOrigin();
+    prepareScatterRay(sd, mi, rayOrigin, rayData);
+    // rayData.radiance = max(sd.N, sd.faceN);
     if (!rayData.terminated)
     {
         rayData.length++;
@@ -420,7 +432,7 @@ bool handleHit(const HitInfo hit, inout ScatterRayData rayData)
     \return Returns the estimated indirect radiance.
  */
 
-float3 pathTrace(ScatterRayData rayData, inout SampleGenerator sg)
+void pathTrace(inout ScatterRayData rayData)
 {
     for (uint depth = 0; depth <= kMaxBounces && !rayData.terminated; depth++)
     {
@@ -431,7 +443,7 @@ float3 pathTrace(ScatterRayData rayData, inout SampleGenerator sg)
         {
             handleHit(hit, rayData);
             // Russian rourette
-            if (sampleNext1D(sg) > prr)
+            if (sampleNext1D(rayData.sg) > prr)
                 break;
             rayData.throughput *= invPrr;
         }
@@ -440,7 +452,7 @@ float3 pathTrace(ScatterRayData rayData, inout SampleGenerator sg)
             rayData.terminated = true;
         }
     }
-    return rayData.radiance;
+    //
 }
 
 // float3 evalDirect()
@@ -455,25 +467,100 @@ float3 pathTrace(ScatterRayData rayData, inout SampleGenerator sg)
     \return
 */
 
+enum class InitialSamplePDFType
+{
+    Uniform,
+    CosineWeighted,
+    BSDF,
+}
+
+/**
+
+*/
+
+bool prepareInitialSampleRay(
+    const InitialSamplePDFType method,
+    const ShadingData sd,
+    const bool isCurveHit,
+    const IMaterialInstance mi,
+    inout ScatterRayData rayData
+)
+{
+    switch (method)
+    {
+    case InitialSamplePDFType::Uniform:
+        float3 randomDir = sample_sphere(sampleNext2D(rayData.sg));
+
+        const uint lobeTypes = mi.getLobeTypes(sd);
+        const bool hasReflection = lobeTypes & uint(LobeType::Reflection);
+        const bool hasTransmission = lobeTypes & uint(LobeType::Transmission);
+        float invPdf = hasReflection && hasTransmission ? M_4PI : M_2PI;
+        randomDir = (dot(randomDir, sd.N) < kMinCosTheta) && hasReflection && !hasTransmission ? -randomDir : randomDir;
+        randomDir = hasTransmission && !hasReflection ? -randomDir : randomDir;
+
+        if (isCurveHit)
+            rayData.origin = sd.posW - sd.curveRadius * sd.N;
+        else if (hasTransmission)
+            rayData.origin = sd.computeNewRayOrigin(false);
+        else
+            rayData.origin = sd.computeNewRayOrigin();
+        rayData.direction = randomDir;
+
+        rayData.throughput *= mi.eval(sd, randomDir, rayData.sg) * invPdf * abs(dot(randomDir, max(sd.N, sd.faceN)));
+        break;
+    case InitialSamplePDFType::CosineWeighted:
+        // TODO implement this.
+        return false;
+        break;
+    case InitialSamplePDFType::BSDF:
+        BSDFSample result;
+        if (mi.sample(sd, rayData.sg, result, true))
+        {
+            if (isCurveHit)
+                rayData.origin = sd.posW - sd.curveRadius * sd.N;
+            else if (result.isLobe(LobeType::Transmission))
+                rayData.origin = sd.computeNewRayOrigin(false);
+            else
+                rayData.origin = sd.computeNewRayOrigin();
+            rayData.direction = result.wo;
+            rayData.throughput *= result.weight;
+        }
+        else
+            return false;
+        break;
+    }
+    return true;
+}
+
+/**
+    \param[in] sd
+    \param[in] mi
+    \param[in] isCurveHit
+    \param[inout] sg
+    \param[inout] radiance
+    \param[inout] sample
+    \return True if success to generate sample.
+*/
+
 bool generateInitialSample(
     const ShadingData sd,
     const IMaterialInstance mi,
+    const bool isCurveHit,
     SampleGenerator sg,
     inout float3 radiance,
     inout GISample sample
 )
 {
     BSDFSample result;
-    if (mi.sample(sd, sg, result, true))
+
+    if (true)
     {
+        // mi.eval()
+        // radiance = max(sd.N, sd.faceN);
+        // return true;
         // Prepare secondry ray.
         ScatterRayData rayData = ScatterRayData(sg);
-        if (result.isLobe(LobeType::Transmission))
-            rayData.origin = sd.computeNewRayOrigin(false);
-        else
-            rayData.origin = sd.computeNewRayOrigin();
-        rayData.direction = result.wo;
-        rayData.throughput *= result.weight;
+        prepareInitialSampleRay(InitialSamplePDFType::Uniform, sd, isCurveHit, mi, rayData);
 
         // radiance += pathTrace(rayData, sg);
         // return true;
@@ -489,21 +576,31 @@ bool generateInitialSample(
             {
                 rayData.throughput *= invPrr;
 
-                pathTrace(rayData, sg);
+                pathTrace(rayData);
             }
             radiance += rayData.radiance;
-
             // Set sample.
+            sample.rand = sampleNext1D(sg);
+            sample.Lo = radiance;
+            sample.xv = sd.posW;
+            sample.nv = max(sd.N, sd.faceN);
+            let lod = ExplicitLodTextureSampler(0.f);
+            ShadingData sampledSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
+            sample.xs = sd.posW;
+            sample.ns = max(sd.N, sd.faceN);
 
             return true;
         }
         else
         {
+            // radiance = ;
             return false;
         }
     }
     else
+    {
         return false;
+    }
 }
 
 /** Initial Sampling
@@ -533,17 +630,25 @@ void sampling(uint2 pixel, uint2 screen)
         // TODO: replace ReSTIR
         if (computeDirect)
         {
+            color += (mi.getProperties(sd).emission);
             color += evalDirectAnalytic(sd, mi, sg);
+            // color = sd.N;
         }
 
         // compute Indirect Lignting
         GISample giSample;
-        generateInitialSample(sd, mi, sg, color, giSample);
+        generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg, color, giSample);
+        initSamples[pixel.x + screen.x * pixel.y] = giSample;
         // ScatterRayData rayData = ScatterRayData(sg);
         // if (prepareScatterRay(sd, mi, sd.computeNewRayOrigin(), rayData))
         // {
         //     color += pathTrace(rayData, sg);
         // }
+        // color = max(sd.N, sd.faceN);
+    }
+    else
+    {
+        // color += float3(0.0f, 0.0, 0.f);
     }
     gIrradiance[pixel] = float4(color, 1.0f);
 }
