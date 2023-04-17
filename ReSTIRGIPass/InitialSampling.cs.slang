@@ -22,7 +22,7 @@ import Rendering.Utils.PixelStats;
 import GIReservoir;
 
 // あとでマジックナンバーやめる
-static const float prr = 0.7f;
+static const float prr = 0.6f;
 static const float invPrr = 1.0 / prr;
 static const bool kUseImportanceSampling = true;
 static const uint kMaxBounces = 10;
@@ -448,6 +448,64 @@ float3 pathTrace(ScatterRayData rayData, inout SampleGenerator sg)
 //     AnalyticLightSample als;
 // }
 
+/**
+    \param[in] sd
+    \param[in] mi
+    \param[inout] sample
+    \return
+*/
+
+bool generateInitialSample(
+    const ShadingData sd,
+    const IMaterialInstance mi,
+    SampleGenerator sg,
+    inout float3 radiance,
+    inout GISample sample
+)
+{
+    BSDFSample result;
+    if (mi.sample(sd, sg, result, true))
+    {
+        // Prepare secondry ray.
+        ScatterRayData rayData = ScatterRayData(sg);
+        if (result.isLobe(LobeType::Transmission))
+            rayData.origin = sd.computeNewRayOrigin(false);
+        else
+            rayData.origin = sd.computeNewRayOrigin();
+        rayData.direction = result.wo;
+        rayData.throughput *= result.weight;
+
+        // radiance += pathTrace(rayData, sg);
+        // return true;
+        // Launch ray.
+        Ray ray = Ray(rayData.origin, rayData.direction, 0.f, FLT_MAX);
+        HitInfo hit;
+        float hitT;
+        if (traceRayInline(ray, hit, hitT))
+        {
+            // Compute Indirect radiance
+            bool terminated = handleHit(hit, rayData);
+            if (sampleNext1D(sg) <= prr)
+            {
+                rayData.throughput *= invPrr;
+
+                pathTrace(rayData, sg);
+            }
+            radiance += rayData.radiance;
+
+            // Set sample.
+
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+    else
+        return false;
+}
+
 /** Initial Sampling
     \param[in] pixel
     \param[in] screen
@@ -458,8 +516,6 @@ void sampling(uint2 pixel, uint2 screen)
     // uint2 noiseSeed = {(pixel.x+gFrameCount)%gNoiseTexDim.x, pixel.y%gNoiseTexDim.y};
     // float3 randVec = gNoise[noiseSeed].xyz;
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
-    float3 randVec = sampleNext3D(sg);
-    randVec = dot(gNormal[pixel].xyz, randVec) > 0 ? randVec : -randVec;
     float3 color = float3(0.f);
     const bool computeDirect = false;
 
@@ -476,35 +532,18 @@ void sampling(uint2 pixel, uint2 screen)
         // compute Direct Lighting
         // TODO: replace ReSTIR
         if (computeDirect)
+        {
             color += evalDirectAnalytic(sd, mi, sg);
+        }
 
         // compute Indirect Lignting
-        ScatterRayData rayData = ScatterRayData(sg);
-        if (prepareScatterRay(sd, mi, sd.computeNewRayOrigin(), rayData))
-        {
-            color += pathTrace(rayData, sg);
-        }
-    }
-
-    if (false)
-    {
-        HitInfo hit;
-        float hitT;
-        float3 rayOriginFromPix = computeRayOrigin(gPositionW[pixel], gNormal[pixel]);
-        Ray ray = Ray(rayOriginFromPix, randVec, 0.f, FLT_MAX);
-        // サンプルポイントからの情報とは別に初期ヒットポイントの処理も書こうね
-        // Handle Sample-Point
-        if (traceRayInline(ray, hit, hitT))
-        {
-            let lod = ExplicitLodTextureSampler(0.f);
-            ShadingData sd = loadShadingData(hit, rayOriginFromPix, randVec, lod);
-            let mi = gScene.materials.getMaterialInstance(sd, lod);
-
-            // eval indirect lighting
-            ScatterRayData rayData = ScatterRayData(sg);
-            bool isValidSample = prepareScatterRay(sd, mi, sd.computeNewRayOrigin(), rayData);
-            color = pathTrace(rayData, sg); // float4(isValidSample ?  : float3(0.f), 1.0f);
-        }
+        GISample giSample;
+        generateInitialSample(sd, mi, sg, color, giSample);
+        // ScatterRayData rayData = ScatterRayData(sg);
+        // if (prepareScatterRay(sd, mi, sd.computeNewRayOrigin(), rayData))
+        // {
+        //     color += pathTrace(rayData, sg);
+        // }
     }
     gIrradiance[pixel] = float4(color, 1.0f);
 }
