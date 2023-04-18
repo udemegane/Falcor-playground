@@ -37,6 +37,7 @@ Texture2D<float4> gNoise;
 Texture2D<float4> gMotionVector;
 
 RWStructuredBuffer<GIReservoir> gTemporalReservoirs;
+RWStructuredBuffer<GISample> gInitSamples;
 RWTexture2D<float4> gIrradiance;
 
 cbuffer CB
@@ -558,28 +559,35 @@ bool generateInitialSample(
     // Prepare secondry ray.
     ScatterRayData rayData = ScatterRayData(sg);
     float invPdf = 0.f;
-    prepareInitialSampleRay(InitialSamplePDFType::Uniform, sd, isCurveHit, mi, rayData, invPdf);
+    prepareInitialSampleRay(InitialSamplePDFType::BSDF, sd, isCurveHit, mi, rayData, invPdf);
 
     // Launch ray.
     Ray ray = Ray(rayData.origin, rayData.direction, 0.f, FLT_MAX);
     HitInfo hit;
     float hitT;
+
+    // Init ray throughput weight for spatial resampling.
+    float3 throughput = rayData.throughput;
+    rayData.throughput = float3(1.0f);
     if (traceRayInline(ray, hit, hitT))
     {
         // Compute Indirect radiance
         bool terminated = handleHit(hit, rayData);
+
         if (sampleNext1D(sg) <= prr)
         {
             rayData.throughput *= invPrr;
 
             pathTrace(rayData);
         }
-        radiance += rayData.radiance;
+        radiance += throughput * rayData.radiance;
+
         // Set sample.
         sample.rand = sampleNext1D(sg);
         // これ間違ってないけど間違ってる
         // 一段前のやつ保存しないとspatialSamplingで死ぬ
-        sample.Lo = radiance;
+        // 対応しました
+        sample.Lo = rayData.radiance;
         sample.xv = sd.posW;
         sample.nv = max(sd.N, sd.faceN);
         let lod = ExplicitLodTextureSampler(0.f);
@@ -642,6 +650,7 @@ void sampling(uint2 pixel, uint2 screen)
         GISample giSample;
         generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg, color, giSample);
         temporalResampling(pixel, giSample);
+        gInitSamples[pixel.x + screen.x * pixel.y] = giSample;
     }
     else
     {

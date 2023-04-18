@@ -11,7 +11,8 @@ RWTexture2D<float4> gDiffuseRadiance;
 RWTexture2D<float4> gSpecularRadiance;
 
 RWStructuredBuffer<GIReservoir> gTemporalReservoirs;
-RWTexture2D<float4> gIrradiance;
+RWStructuredBuffer<GISample> gInitSamples;
+RWTexture2D<float4> gThroughput;
 
 cbuffer CB
 {
@@ -20,9 +21,16 @@ cbuffer CB
     uint2 gNoiseTexDim;
 }
 
+float3 finalShading(uint2 pixel)
+{
+    // TODO: implement this.
+    // outColor = DirectLighting + sample.Lo*throughput
+    return float3(0.f);
+}
+
 [numthreads(16, 16, 1)]
 void main(uint3 groupId: SV_GroupID, uint3 groupThreadId: SV_GroupThreadID, uint3 dispatchThreadId: SV_DispatchThreadID)
 {
     uint2 pixel = dispatchThreadId.xy;
-    gColor[pixel] = gIrradiance[pixel];
+    gColor[pixel] = float4(finalShading(pixel), 1.0f);
 }
