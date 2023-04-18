@@ -66,14 +66,15 @@ private:
         const RenderData& renderData,
         const Texture::SharedPtr& pVBuffer,
         const Texture::SharedPtr& pNormal,
-        const Texture::SharedPtr& pNoiseTexture
-    );
-    void temporalResampling(
-        RenderContext* pRenderContext,
-        const RenderData& renderData,
         const Texture::SharedPtr& pMotionVector,
         const Texture::SharedPtr& pNoiseTexture
     );
+//    void temporalResampling(
+//        RenderContext* pRenderContext,
+//        const RenderData& renderData,
+//        const Texture::SharedPtr& pMotionVector,
+//        const Texture::SharedPtr& pNoiseTexture
+//    );
     void spatialResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pNoiseTexture);
     void finalShading(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pNoiseTexture);
     void endFrame();
@@ -85,7 +86,7 @@ private:
     ComputePass::SharedPtr mpSpatialResamplingPass;
     ComputePass::SharedPtr mpFinalShadingPass;
 
-    Buffer::SharedPtr mpInitialSamples;
+//    Buffer::SharedPtr mpInitialSamples;
     Buffer::SharedPtr mpTemporalReservoirs;
     Buffer::SharedPtr mpSpatialReservoirs;
 

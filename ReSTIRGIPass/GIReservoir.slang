@@ -5,6 +5,7 @@ struct GISample
     float3 xs;
     float3 ns;
     float3 Lo;
+    float invPdf;
     float rand;
 }
 
@@ -14,7 +15,6 @@ struct GIReservoir
     float wSum;
     uint M;
     float3 ps;
-    float normedPs;
 
     [mutating]
     bool update(const GISample si, const float wi, const float3 pi)
@@ -25,7 +25,6 @@ struct GIReservoir
         {
             s = si;
             ps = pi;
-            normedPs = length(ps);
         }
         M++;
         return accept;
@@ -35,11 +34,11 @@ struct GIReservoir
     void merge(GIReservoir ri, float3 pi)
     {
         uint tempM = M;
-        float fixedW = ri.wSum * (length(pi) / normedPs);
+        float fixedW = ri.wSum * (length(pi) / length(ps));
         update(ri.s, fixedW, pi);
         M = tempM + ri.M;
     }
 
-    float getInvPDF() { return wSum / (M * normedPs); }
+    float getInvPDF() { return wSum / (M * length(ps)); }
 }
 

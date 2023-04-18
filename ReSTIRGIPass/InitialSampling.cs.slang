@@ -34,8 +34,9 @@ Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float3> gNormal;
 Texture2D<float3> gPositionW;
 Texture2D<float4> gNoise;
+Texture2D<float4> gMotionVector;
 
-RWStructuredBuffer<GISample> initSamples;
+RWStructuredBuffer<GIReservoir> gTemporalReservoirs;
 RWTexture2D<float4> gIrradiance;
 
 cbuffer CB
@@ -483,7 +484,8 @@ bool prepareInitialSampleRay(
     const ShadingData sd,
     const bool isCurveHit,
     const IMaterialInstance mi,
-    inout ScatterRayData rayData
+    inout ScatterRayData rayData,
+    out float invPdf
 )
 {
     switch (method)
@@ -494,7 +496,7 @@ bool prepareInitialSampleRay(
         const uint lobeTypes = mi.getLobeTypes(sd);
         const bool hasReflection = lobeTypes & uint(LobeType::Reflection);
         const bool hasTransmission = lobeTypes & uint(LobeType::Transmission);
-        float invPdf = hasReflection && hasTransmission ? M_4PI : M_2PI;
+        invPdf = hasReflection && hasTransmission ? M_4PI : M_2PI;
         randomDir = (dot(randomDir, sd.N) < kMinCosTheta) && hasReflection && !hasTransmission ? -randomDir : randomDir;
         randomDir = hasTransmission && !hasReflection ? -randomDir : randomDir;
 
@@ -505,7 +507,6 @@ bool prepareInitialSampleRay(
         else
             rayData.origin = sd.computeNewRayOrigin();
         rayData.direction = randomDir;
-
         rayData.throughput *= mi.eval(sd, randomDir, rayData.sg) * invPdf * abs(dot(randomDir, max(sd.N, sd.faceN)));
         break;
     case InitialSamplePDFType::CosineWeighted:
@@ -524,6 +525,7 @@ bool prepareInitialSampleRay(
                 rayData.origin = sd.computeNewRayOrigin();
             rayData.direction = result.wo;
             rayData.throughput *= result.weight;
+            invPdf = 1.0f / mi.evalPdf(sd, result.wo, true);
         }
         else
             return false;
@@ -533,12 +535,12 @@ bool prepareInitialSampleRay(
 }
 
 /**
-    \param[in] sd
-    \param[in] mi
+    \param[in] sd Shading Data of Xv
+    \param[in] mi Material Data of Xv
     \param[in] isCurveHit
-    \param[inout] sg
+    \param[inout] sg Sample Generator
     \param[inout] radiance
-    \param[inout] sample
+    \param[inout] sample Sampled Data of Xs
     \return True if success to generate sample.
 */
 
@@ -553,54 +555,55 @@ bool generateInitialSample(
 {
     BSDFSample result;
 
-    if (true)
+    // Prepare secondry ray.
+    ScatterRayData rayData = ScatterRayData(sg);
+    float invPdf = 0.f;
+    prepareInitialSampleRay(InitialSamplePDFType::Uniform, sd, isCurveHit, mi, rayData, invPdf);
+
+    // Launch ray.
+    Ray ray = Ray(rayData.origin, rayData.direction, 0.f, FLT_MAX);
+    HitInfo hit;
+    float hitT;
+    if (traceRayInline(ray, hit, hitT))
     {
-        // mi.eval()
-        // radiance = max(sd.N, sd.faceN);
-        // return true;
-        // Prepare secondry ray.
-        ScatterRayData rayData = ScatterRayData(sg);
-        prepareInitialSampleRay(InitialSamplePDFType::Uniform, sd, isCurveHit, mi, rayData);
-
-        // radiance += pathTrace(rayData, sg);
-        // return true;
-        // Launch ray.
-        Ray ray = Ray(rayData.origin, rayData.direction, 0.f, FLT_MAX);
-        HitInfo hit;
-        float hitT;
-        if (traceRayInline(ray, hit, hitT))
+        // Compute Indirect radiance
+        bool terminated = handleHit(hit, rayData);
+        if (sampleNext1D(sg) <= prr)
         {
-            // Compute Indirect radiance
-            bool terminated = handleHit(hit, rayData);
-            if (sampleNext1D(sg) <= prr)
-            {
-                rayData.throughput *= invPrr;
+            rayData.throughput *= invPrr;
 
-                pathTrace(rayData);
-            }
-            radiance += rayData.radiance;
-            // Set sample.
-            sample.rand = sampleNext1D(sg);
-            sample.Lo = radiance;
-            sample.xv = sd.posW;
-            sample.nv = max(sd.N, sd.faceN);
-            let lod = ExplicitLodTextureSampler(0.f);
-            ShadingData sampledSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
-            sample.xs = sd.posW;
-            sample.ns = max(sd.N, sd.faceN);
-
-            return true;
+            pathTrace(rayData);
         }
-        else
-        {
-            // radiance = ;
-            return false;
-        }
+        radiance += rayData.radiance;
+        // Set sample.
+        sample.rand = sampleNext1D(sg);
+        // これ間違ってないけど間違ってる
+        // 一段前のやつ保存しないとspatialSamplingで死ぬ
+        sample.Lo = radiance;
+        sample.xv = sd.posW;
+        sample.nv = max(sd.N, sd.faceN);
+        let lod = ExplicitLodTextureSampler(0.f);
+        ShadingData sampledSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
+        sample.xs = sd.posW;
+        sample.ns = max(sd.N, sd.faceN);
+        sample.invPdf = invPdf;
+        return true;
     }
     else
     {
         return false;
     }
+}
+
+/**
+    \param[in] pixel
+*/
+
+void temporalResampling(const uint2 pixel, const GISample s)
+{
+    // TODO: compute it.
+    const uint prevFramePix1D = 0;
+    gTemporalReservoirs[prevFramePix1D].update(s, length(s.Lo) * s.invPdf, s.Lo);
 }
 
 /** Initial Sampling
@@ -638,13 +641,7 @@ void sampling(uint2 pixel, uint2 screen)
         // compute Indirect Lignting
         GISample giSample;
         generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg, color, giSample);
-        initSamples[pixel.x + screen.x * pixel.y] = giSample;
-        // ScatterRayData rayData = ScatterRayData(sg);
-        // if (prepareScatterRay(sd, mi, sd.computeNewRayOrigin(), rayData))
-        // {
-        //     color += pathTrace(rayData, sg);
-        // }
-        // color = max(sd.N, sd.faceN);
+        temporalResampling(pixel, giSample);
     }
     else
     {

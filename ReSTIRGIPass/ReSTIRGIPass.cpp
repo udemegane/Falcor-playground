@@ -150,8 +150,8 @@ void ReSTIRGIPass::execute(RenderContext* pRenderContext, const RenderData& rend
     FALCOR_ASSERT(pNoise);
     mNoiseDim = {pNoise.get()->getHeight(), pNoise.get()->getWidth()};
 
-    initialSampling(pRenderContext, renderData, pVBuffer, pNormal, pNoise);
-    temporalResampling(pRenderContext, renderData, pMVec, pNoise);
+    initialSampling(pRenderContext, renderData, pVBuffer, pNormal,pMVec,pNoise);
+//    temporalResampling(pRenderContext, renderData, pMVec, pNoise);
     spatialResampling(pRenderContext, renderData, pNoise);
     finalShading(pRenderContext, renderData, pNoise);
     endFrame();
@@ -164,6 +164,7 @@ void ReSTIRGIPass::initialSampling(
     const RenderData& renderData,
     const Texture::SharedPtr& pVBuffer,
     const Texture::SharedPtr& pNormal,
+    const Texture::SharedPtr& pMotionVector,
     const Texture::SharedPtr& pNoiseTexture
 )
 {
@@ -187,14 +188,14 @@ void ReSTIRGIPass::initialSampling(
 
     auto var = mpInitialSamplingPass->getRootVar();
 
-    if (!mpInitialSamples)
-    {
-        uint32_t frameDim1D = mFrameDim.x * mFrameDim.y;
-        mpInitialSamples = Buffer::createStructured(
-            mpDevice.get(), var["initSamples"], frameDim1D, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
-            Buffer::CpuAccess::None, nullptr, false
-        );
-    }
+//    if (!mpInitialSamples)
+//    {
+//        uint32_t frameDim1D = mFrameDim.x * mFrameDim.y;
+//        mpInitialSamples = Buffer::createStructured(
+//            mpDevice.get(), var["initSamples"], frameDim1D, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+//            Buffer::CpuAccess::None, nullptr, false
+//        );
+//    }
     if (!mpIrradianceCache)
     {
         mpIrradianceCache = Texture::create2D(
@@ -202,11 +203,24 @@ void ReSTIRGIPass::initialSampling(
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
         );
     }
-    var["initSamples"] = mpInitialSamples;
+
+    if (!mpTemporalReservoirs)
+    {
+        uint32_t reservoirCounts = mFrameDim.x * mFrameDim.y;
+        mpTemporalReservoirs = Buffer::createStructured(
+            mpDevice.get(), var["gTemporalReservoirs"], reservoirCounts, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+            Buffer::CpuAccess::None, nullptr, false
+        );
+    }
+
     var["gIrradiance"] = mpIrradianceCache;
+    var["gTemporalReservoirs"] = mpTemporalReservoirs;
+
     var["gVBuffer"] = pVBuffer;
     var["gNormal"] = pNormal;
     var["gNoise"] = pNoiseTexture;
+    var["gMotionVector"] = pMotionVector;
+
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = mFrameDim;
@@ -217,52 +231,51 @@ void ReSTIRGIPass::initialSampling(
     mpInitialSamplingPass->execute(pRenderContext, {mFrameDim, 1u});
 }
 
-void ReSTIRGIPass::temporalResampling(
-    RenderContext* pRenderContext,
-    const RenderData& renderData,
-    const Texture::SharedPtr& pMotionVector,
-    const Texture::SharedPtr& pNoiseTexture
-)
-{
-    FALCOR_ASSERT(pMotionVector);
-    if (!mpTemporalResamplingPass)
-    {
-        Program::Desc desc;
-        desc.addShaderModules(mpScene->getShaderModules());
-        desc.addShaderLibrary(kTemporalSamplingFIle).setShaderModel(kShaderModel).csEntry("main");
-        desc.addTypeConformances(mpScene->getTypeConformances());
-
-        auto defines = mpScene->getSceneDefines();
-        defines.add(mpSampleGenerator->getDefines());
-        mpTemporalResamplingPass = ComputePass::create(mpDevice, desc, defines, true);
-    }
-    FALCOR_ASSERT(mpTemporalResamplingPass);
-    auto var = mpTemporalResamplingPass->getRootVar();
-
-    if (!mpTemporalReservoirs)
-    {
-        uint32_t reservoirCounts = mFrameDim.x * mFrameDim.y;
-        mpTemporalReservoirs = Buffer::createStructured(
-            mpDevice.get(), var["gTemporalReservoirs"], reservoirCounts, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
-            Buffer::CpuAccess::None, nullptr, false
-        );
-    }
-    FALCOR_ASSERT(mpInitialSamples);
-    var["initSamples"] = mpInitialSamples;
-    var["gTemporalReservoirs"] = mpTemporalReservoirs;
-    var["gMotionVector"] = pMotionVector;
-    var["gNoise"] = pNoiseTexture;
-
-    var["CB"]["gFrameCount"] = mFrameCount;
-    var["CB"]["gFrameDim"] = mFrameDim;
-    var["CB"]["gNoiseTexDim"] = mNoiseDim;
-
-    var["gMotionVector"] = pMotionVector;
-
-    var["gScene"] = mpScene->getParameterBlock();
-    mpSampleGenerator->setShaderData(var);
-    mpTemporalResamplingPass->execute(pRenderContext, {mFrameDim, 1u});
-}
+//void ReSTIRGIPass::temporalResampling(
+//    RenderContext* pRenderContext,
+//    const RenderData& renderData,
+//    const Texture::SharedPtr& pMotionVector,
+//    const Texture::SharedPtr& pNoiseTexture
+//)
+//{
+//    FALCOR_ASSERT(pMotionVector);
+//    if (!mpTemporalResamplingPass)
+//    {
+//        Program::Desc desc;
+//        desc.addShaderModules(mpScene->getShaderModules());
+//        desc.addShaderLibrary(kTemporalSamplingFIle).setShaderModel(kShaderModel).csEntry("main");
+//        desc.addTypeConformances(mpScene->getTypeConformances());
+//
+//        auto defines = mpScene->getSceneDefines();
+//        defines.add(mpSampleGenerator->getDefines());
+//        mpTemporalResamplingPass = ComputePass::create(mpDevice, desc, defines, true);
+//    }
+//    FALCOR_ASSERT(mpTemporalResamplingPass);
+//    auto var = mpTemporalResamplingPass->getRootVar();
+//
+//    if (!mpTemporalReservoirs)
+//    {
+//        uint32_t reservoirCounts = mFrameDim.x * mFrameDim.y;
+//        mpTemporalReservoirs = Buffer::createStructured(
+//            mpDevice.get(), var["gTemporalReservoirs"], reservoirCounts, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+//            Buffer::CpuAccess::None, nullptr, false
+//        );
+//    }
+//    FALCOR_ASSERT(mpInitialSamples);
+//    var["initSamples"] = mpInitialSamples;
+//    var["gTemporalReservoirs"] = mpTemporalReservoirs;
+//    var["gMotionVector"] = pMotionVector;
+//    var["gNoise"] = pNoiseTexture;
+//
+//    var["CB"]["gFrameCount"] = mFrameCount;
+//    var["CB"]["gFrameDim"] = mFrameDim;
+//    var["CB"]["gNoiseTexDim"] = mNoiseDim;
+//
+//
+//    var["gScene"] = mpScene->getParameterBlock();
+//    mpSampleGenerator->setShaderData(var);
+//    mpTemporalResamplingPass->execute(pRenderContext, {mFrameDim, 1u});
+//}
 
 void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pNoiseTexture)
 {
