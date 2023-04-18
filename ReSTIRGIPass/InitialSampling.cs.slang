@@ -38,7 +38,7 @@ Texture2D<float4> gMotionVector;
 
 RWStructuredBuffer<GIReservoir> gTemporalReservoirs;
 RWStructuredBuffer<GISample> gInitSamples;
-RWTexture2D<float4> gIrradiance;
+RWTexture2D<float3> gThroughput;
 
 cbuffer CB
 {
@@ -403,7 +403,8 @@ bool handleHit(const HitInfo hit, inout ScatterRayData rayData)
 
     // eval radiance
     // if (kUseEmissiveLights)
-    rayData.radiance += rayData.throughput * (mi.getProperties(sd).emission);
+    if (rayData.length > 0)
+        rayData.radiance += rayData.throughput * (mi.getProperties(sd).emission);
 
     if (rayData.length >= kMaxBounces)
     {
@@ -529,7 +530,10 @@ bool prepareInitialSampleRay(
             invPdf = 1.0f / mi.evalPdf(sd, result.wo, true);
         }
         else
+        {
+            rayData.terminated = true;
             return false;
+        }
         break;
     }
     return true;
@@ -545,12 +549,11 @@ bool prepareInitialSampleRay(
     \return True if success to generate sample.
 */
 
-bool generateInitialSample(
+float3 generateInitialSample(
     const ShadingData sd,
     const IMaterialInstance mi,
     const bool isCurveHit,
     SampleGenerator sg,
-    inout float3 radiance,
     inout GISample sample
 )
 {
@@ -572,21 +575,18 @@ bool generateInitialSample(
     if (traceRayInline(ray, hit, hitT))
     {
         // Compute Indirect radiance
-        bool terminated = handleHit(hit, rayData);
+        handleHit(hit, rayData);
 
-        if (sampleNext1D(sg) <= prr)
+        if (sampleNext1D(sg) <= prr && !rayData.terminated)
         {
             rayData.throughput *= invPrr;
 
             pathTrace(rayData);
         }
-        radiance += throughput * rayData.radiance;
+        // radiance += throughput * rayData.radiance;
 
         // Set sample.
         sample.rand = sampleNext1D(sg);
-        // これ間違ってないけど間違ってる
-        // 一段前のやつ保存しないとspatialSamplingで死ぬ
-        // 対応しました
         sample.Lo = rayData.radiance;
         sample.xv = sd.posW;
         sample.nv = max(sd.N, sd.faceN);
@@ -595,11 +595,11 @@ bool generateInitialSample(
         sample.xs = sd.posW;
         sample.ns = max(sd.N, sd.faceN);
         sample.invPdf = invPdf;
-        return true;
+        return throughput;
     }
     else
     {
-        return false;
+        return float3(-1.0f);
     }
 }
 
@@ -645,18 +645,35 @@ void sampling(uint2 pixel, uint2 screen)
             color += evalDirectAnalytic(sd, mi, sg);
             // color = sd.N;
         }
-
+        if (false)
+        {
+            ScatterRayData rayData = ScatterRayData(sg);
+            prepareScatterRay(sd, mi, sd.computeNewRayOrigin(), rayData);
+            GISample sample;
+            pathTrace(rayData);
+            sample.Lo = rayData.radiance;
+            sample.invPdf = 0.f;
+            sample.ns = float3(0.f);
+            sample.nv = float3(0.f);
+            sample.xs = float3(0.f);
+            sample.xv = float3(0.f);
+            sample.rand = 0.f;
+            gThroughput[pixel] = float3(1.0f);
+            gInitSamples[pixel.x + screen.x * pixel.y] = sample;
+        }
+        else
+        {
+            GISample giSample;
+            gThroughput[pixel] = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg, giSample);
+            temporalResampling(pixel, giSample);
+            gInitSamples[pixel.x + screen.x * pixel.y] = giSample;
+        }
         // compute Indirect Lignting
-        GISample giSample;
-        generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg, color, giSample);
-        temporalResampling(pixel, giSample);
-        gInitSamples[pixel.x + screen.x * pixel.y] = giSample;
     }
     else
     {
         // color += float3(0.0f, 0.0, 0.f);
     }
-    gIrradiance[pixel] = float4(color, 1.0f);
 }
 
 [numthreads(16, 16, 1)]

@@ -86,11 +86,11 @@ private:
     ComputePass::SharedPtr mpSpatialResamplingPass;
     ComputePass::SharedPtr mpFinalShadingPass;
 
-//    Buffer::SharedPtr mpInitialSamples;
+    Buffer::SharedPtr mpInitialSamples;
     Buffer::SharedPtr mpTemporalReservoirs;
     Buffer::SharedPtr mpSpatialReservoirs;
 
-    Texture::SharedPtr mpIrradianceCache;
+    Texture::SharedPtr mpPrimaryThroughput;
 
     SampleGenerator::SharedPtr mpSampleGenerator;
     EnvMapSampler::SharedPtr mpEnvMapSampler;

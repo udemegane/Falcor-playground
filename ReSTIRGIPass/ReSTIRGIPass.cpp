@@ -188,17 +188,17 @@ void ReSTIRGIPass::initialSampling(
 
     auto var = mpInitialSamplingPass->getRootVar();
 
-//    if (!mpInitialSamples)
-//    {
-//        uint32_t frameDim1D = mFrameDim.x * mFrameDim.y;
-//        mpInitialSamples = Buffer::createStructured(
-//            mpDevice.get(), var["initSamples"], frameDim1D, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
-//            Buffer::CpuAccess::None, nullptr, false
-//        );
-//    }
-    if (!mpIrradianceCache)
+    if (!mpInitialSamples)
     {
-        mpIrradianceCache = Texture::create2D(
+        uint32_t frameDim1D = mFrameDim.x * mFrameDim.y;
+        mpInitialSamples = Buffer::createStructured(
+            mpDevice.get(), var["gInitSamples"], frameDim1D, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+            Buffer::CpuAccess::None, nullptr, false
+        );
+    }
+    if (!mpPrimaryThroughput)
+    {
+        mpPrimaryThroughput = Texture::create2D(
             mpDevice.get(), (uint32_t)mFrameDim.x, (uint32_t)mFrameDim.y, ResourceFormat::RGBA32Float, 1, 1, nullptr,
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
         );
@@ -213,7 +213,8 @@ void ReSTIRGIPass::initialSampling(
         );
     }
 
-    var["gIrradiance"] = mpIrradianceCache;
+    var["gInitSamples"] = mpInitialSamples;
+    var["gThroughput"] = mpPrimaryThroughput;
     var["gTemporalReservoirs"] = mpTemporalReservoirs;
 
     var["gVBuffer"] = pVBuffer;
@@ -331,9 +332,11 @@ void ReSTIRGIPass::finalShading(RenderContext* pRenderContext, const RenderData&
     mpFinalShadingPass->getProgram()->addDefines(getValidResourceDefines(kOutputChannels, renderData));
     auto var = mpFinalShadingPass->getRootVar();
     FALCOR_ASSERT(mpTemporalReservoirs);
-    FALCOR_ASSERT(mpIrradianceCache);
+    FALCOR_ASSERT(mpPrimaryThroughput);
+
+    var["gInitSamples"] = mpInitialSamples;
     var["gTemporalReservoirs"] = mpTemporalReservoirs;
-    var["gIrradiance"] = mpIrradianceCache;
+    var["gThroughput"] = mpPrimaryThroughput;
     var["gNoise"] = pNoiseTexture;
 
     var["CB"]["gFrameCount"] = mFrameCount;
