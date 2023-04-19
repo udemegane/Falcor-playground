@@ -456,13 +456,7 @@ void pathTrace(inout ScatterRayData rayData)
             rayData.terminated = true;
         }
     }
-    //
 }
-
-// float3 evalDirect()
-// {
-//     AnalyticLightSample als;
-// }
 
 /**
     \param[in] sd
@@ -479,7 +473,13 @@ enum class InitialSamplePDFType
 }
 
 /**
-
+    \param[in] method
+    \param[in] sd
+    \param[in] isCurveHit
+    \param[in] mi
+    \param[inout] rayData
+    \param[out] invPdf
+    \return True if sucsess to generate ray payload.
 */
 
 bool prepareInitialSampleRay(
@@ -606,13 +606,16 @@ float3 generateInitialSample(
 
 /**
     \param[in] pixel
+    \param[in] s
 */
 
 void temporalResampling(const uint2 pixel, const GISample s)
 {
-    // TODO: compute it.
-    const uint prevFramePix1D = 0;
-    gTemporalReservoirs[prevFramePix1D].update(s, length(s.Lo) * s.invPdf, s.Lo);
+    // temporal reservoirsの初期化をお願いマッスル
+    int2 prevPixelPos = (int2)pixel + int2(gFrameDim * gMotionVector[pixel].xy);
+    int prevFramePix1D = prevPixelPos.x + (int)gFrameDim.x * prevPixelPos.y;
+    if (prevFramePix1D >= 0 && prevFramePix1D < gFrameDim.x * gFrameDim.y)
+        gTemporalReservoirs[prevFramePix1D].update(s, length(s.Lo) * s.invPdf, s.Lo);
 }
 
 /** Initial Sampling
@@ -646,33 +649,37 @@ void sampling(uint2 pixel, uint2 screen)
             color += evalDirectAnalytic(sd, mi, sg);
             // color = sd.N;
         }
-        if (false)
-        {
-            // Simple path tracer
-            // referenceと結果が一致するので挙動に問題なし
-            ScatterRayData rayData = ScatterRayData(sg);
-            prepareScatterRay(sd, mi, sd.computeNewRayOrigin(), rayData);
-            GISample sample;
-            pathTrace(rayData);
-            sample.Lo = rayData.radiance;
-            sample.invPdf = 0.f;
-            sample.ns = float3(0.f);
-            sample.nv = float3(0.f);
-            sample.xs = float3(0.f);
-            sample.xv = float3(0.f);
-            sample.rand = 0.f;
-            gThroughput[pixel] = float3(1.0f);
-            gInitSamples[pixel.x + screen.x * pixel.y] = sample;
-        }
-        else
-        {
-            // 怪しい
-            GISample giSample;
-            gThroughput[pixel] = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg, giSample);
-            temporalResampling(pixel, giSample);
-            gInitSamples[pixel.x + screen.x * pixel.y] = giSample;
-        }
-        // compute Indirect Lignting
+        // if (false)
+        // {
+        //     // Simple path tracer
+        //     // referenceと結果が一致するので挙動に問題なし
+        //     ScatterRayData rayData = ScatterRayData(sg);
+        //     prepareScatterRay(sd, mi, sd.computeNewRayOrigin(), rayData);
+        //     GISample sample;
+        //     pathTrace(rayData);
+        //     sample.Lo = rayData.radiance;
+        //     sample.invPdf = 0.f;
+        //     sample.ns = float3(0.f);
+        //     sample.nv = float3(0.f);
+        //     sample.xs = float3(0.f);
+        //     sample.xv = float3(0.f);
+        //     sample.rand = 0.f;
+        //     gThroughput[pixel] = float3(1.0f);
+        //     gInitSamples[pixel.x + screen.x * pixel.y] = sample;
+        // }
+        // else
+        // {
+
+        GISample giSample;
+        gThroughput[pixel] = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg, giSample);
+        temporalResampling(pixel, giSample);
+        gThroughput[pixel] = float3(1.0f);
+        // x が横
+        // y　が縦
+        // z,wが空
+        giSample.Lo = float3(gMotionVector[pixel].z);
+        gInitSamples[pixel.x + screen.x * pixel.y] = giSample;
+        // }
     }
     else
     {
