@@ -24,6 +24,8 @@ import GIReservoir;
 // あとでマジックナンバーやめる
 static const float prr = 0.6f;
 static const float invPrr = 1.0 / prr;
+static const float prrSecondry = 0.6f;
+static const float invPrrSecondry = 1.0 / prrSecondry;
 static const bool kUseImportanceSampling = true;
 static const uint kMaxBounces = 10;
 static const bool kUseEnvLight = true;
@@ -417,7 +419,6 @@ bool handleHit(const HitInfo hit, inout ScatterRayData rayData)
     // add length
     float3 rayOrigin = hit.getType() == HitType::Curve ? sd.posW - sd.curveRadius * sd.N : sd.computeNewRayOrigin();
     prepareScatterRay(sd, mi, rayOrigin, rayData);
-    // rayData.radiance = max(sd.N, sd.faceN);
     if (!rayData.terminated)
     {
         rayData.length++;
@@ -528,6 +529,7 @@ bool prepareInitialSampleRay(
             rayData.direction = result.wo;
             rayData.throughput *= result.weight;
             invPdf = 1.0f / mi.evalPdf(sd, result.wo, true);
+            return any(rayData.throughput > 0.f);
         }
         else
         {
@@ -562,6 +564,8 @@ float3 generateInitialSample(
     // Prepare secondry ray.
     ScatterRayData rayData = ScatterRayData(sg);
     float invPdf = 0.f;
+
+    // terminatedの処理が怪しい
     prepareInitialSampleRay(InitialSamplePDFType::BSDF, sd, isCurveHit, mi, rayData, invPdf);
 
     // Launch ray.
@@ -575,15 +579,11 @@ float3 generateInitialSample(
     if (traceRayInline(ray, hit, hitT))
     {
         // Compute Indirect radiance
-        handleHit(hit, rayData);
-
-        if (sampleNext1D(sg) <= prr && !rayData.terminated)
+        if (sampleNext1D(sg) <= prr && handleHit(hit, rayData))
         {
             rayData.throughput *= invPrr;
-
             pathTrace(rayData);
         }
-        // radiance += throughput * rayData.radiance;
 
         // Set sample.
         sample.rand = sampleNext1D(sg);
@@ -595,6 +595,7 @@ float3 generateInitialSample(
         sample.xs = sd.posW;
         sample.ns = max(sd.N, sd.faceN);
         sample.invPdf = invPdf;
+
         return throughput;
     }
     else
@@ -647,6 +648,8 @@ void sampling(uint2 pixel, uint2 screen)
         }
         if (false)
         {
+            // Simple path tracer
+            // referenceと結果が一致するので挙動に問題なし
             ScatterRayData rayData = ScatterRayData(sg);
             prepareScatterRay(sd, mi, sd.computeNewRayOrigin(), rayData);
             GISample sample;
@@ -663,6 +666,7 @@ void sampling(uint2 pixel, uint2 screen)
         }
         else
         {
+            // 怪しい
             GISample giSample;
             gThroughput[pixel] = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg, giSample);
             temporalResampling(pixel, giSample);
