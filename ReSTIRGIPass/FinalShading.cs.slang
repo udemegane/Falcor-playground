@@ -10,7 +10,7 @@ RWTexture2D<float4> gColor;
 RWTexture2D<float4> gDiffuseRadiance;
 RWTexture2D<float4> gSpecularRadiance;
 
-RWStructuredBuffer<GIReservoir> gTemporalReservoirs;
+RWStructuredBuffer<GIReservoir> gFinalReservoirs;
 RWStructuredBuffer<GISample> gInitSamples;
 RWTexture2D<float3> gThroughput;
 
@@ -26,6 +26,7 @@ float3 finalShading(uint2 pixel)
     // TODO: implement this.
     // outColor = DirectLighting + sample.Lo*throughput
     uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
+    return gThroughput[pixel] * gFinalReservoirs[pixel1D].s.Lo; //* gFinalReservoirs[pixel1D].getInvPDF();
     return gInitSamples[pixel1D].Lo * gThroughput[pixel];
 }
 

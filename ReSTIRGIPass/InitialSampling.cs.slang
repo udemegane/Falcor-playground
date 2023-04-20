@@ -38,6 +38,7 @@ Texture2D<float3> gPositionW;
 Texture2D<float4> gNoise;
 Texture2D<float4> gMotionVector;
 
+RWStructuredBuffer<GIReservoir> gPrevFrameReservoirs;
 RWStructuredBuffer<GIReservoir> gTemporalReservoirs;
 RWStructuredBuffer<GISample> gInitSamples;
 RWTexture2D<float3> gThroughput;
@@ -614,8 +615,17 @@ void temporalResampling(const uint2 pixel, const GISample s)
     // temporal reservoirsの初期化をお願いマッスル
     int2 prevPixelPos = (int2)pixel + int2(gFrameDim * gMotionVector[pixel].xy);
     int prevFramePix1D = prevPixelPos.x + (int)gFrameDim.x * prevPixelPos.y;
+    GIReservoir currentReservoir = GIReservoir();
     if (prevFramePix1D >= 0 && prevFramePix1D < gFrameDim.x * gFrameDim.y)
-        gTemporalReservoirs[prevFramePix1D].update(s, length(s.Lo) * s.invPdf, s.Lo);
+        currentReservoir = gPrevFrameReservoirs[prevFramePix1D];
+    currentReservoir.update(s, length(s.Lo) * s.invPdf, s.Lo);
+    // TODO: clamp M
+    if (currentReservoir.M > 30)
+    {
+        currentReservoir.wSum *= (float)30 / currentReservoir.M;
+        currentReservoir.M = 30;
+    }
+    gTemporalReservoirs[pixel.x + gFrameDim.x * pixel.y] = currentReservoir;
 }
 
 /** Initial Sampling
@@ -673,11 +683,6 @@ void sampling(uint2 pixel, uint2 screen)
         GISample giSample;
         gThroughput[pixel] = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg, giSample);
         temporalResampling(pixel, giSample);
-        gThroughput[pixel] = float3(1.0f);
-        // x が横
-        // y　が縦
-        // z,wが空
-        giSample.Lo = float3(gMotionVector[pixel].z);
         gInitSamples[pixel.x + screen.x * pixel.y] = giSample;
         // }
     }

@@ -15,6 +15,12 @@ struct GIReservoir
     float wSum;
     uint M;
     float3 ps;
+    __init()
+    {
+        wSum = 0.f;
+        M = 0;
+        ps = float3(0.f);
+    }
 
     [mutating]
     bool update(const GISample si, const float wi, const float3 pi)

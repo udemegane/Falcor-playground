@@ -16,7 +16,16 @@ cbuffer CB
     uint2 gNoiseTexDim;
 }
 
-void spatialResampling(uint2 pixel) {}
+void spatialResampling(uint2 pixel)
+{
+    // TODO:
+    uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
+    gSpatialReservoirs[pixel1D] = gTemporalReservoirs[pixel1D];
+}
 
 [numthreads(16, 16, 1)]
-void main(uint3 groupId: SV_GroupID, uint3 groupThreadId: SV_GroupThreadID, uint3 dispatchThreadId: SV_DispatchThreadID) {}
+void main(uint3 groupId: SV_GroupID, uint3 groupThreadId: SV_GroupThreadID, uint3 dispatchThreadId: SV_DispatchThreadID)
+{
+    uint2 pixel = dispatchThreadId.xy;
+    spatialResampling(pixel);
+}
