@@ -616,9 +616,15 @@ void temporalResampling(const uint2 pixel, const GISample s)
     int2 prevPixelPos = (int2)pixel + int2(gFrameDim * gMotionVector[pixel].xy);
     int prevFramePix1D = prevPixelPos.x + (int)gFrameDim.x * prevPixelPos.y;
     GIReservoir currentReservoir = GIReservoir();
-    if (prevFramePix1D >= 0 && prevFramePix1D < gFrameDim.x * gFrameDim.y)
-        currentReservoir = gPrevFrameReservoirs[prevFramePix1D];
     currentReservoir.update(s, length(s.Lo) * s.invPdf, s.Lo);
+
+    if (prevFramePix1D >= 0 && prevFramePix1D < gFrameDim.x * gFrameDim.y)
+    {
+        ;
+        let res = gPrevFrameReservoirs[prevFramePix1D];
+        currentReservoir.merge(res, res.ps);
+    }
+
     // TODO: clamp M
     if (currentReservoir.M > 30)
     {
@@ -627,6 +633,30 @@ void temporalResampling(const uint2 pixel, const GISample s)
     }
     gTemporalReservoirs[pixel.x + gFrameDim.x * pixel.y] = currentReservoir;
 }
+
+// void temporalResampling(const uint2 pixel, const GISample s)
+// {
+//     int2 prevPixelPos = (int2)pixel + int2(gFrameDim * gMotionVector[pixel].xy);
+//     int prevFramePix1D = prevPixelPos.x + (int)gFrameDim.x * prevPixelPos.y;
+//     GIReservoir currentReservoir = GIReservoir();
+//     currentReservoir.update(s, length(s.Lo) * s.invPdf, s.Lo);
+//     if (prevFramePix1D >= 0 && prevFramePix1D < gFrameDim.x * gFrameDim.y)
+//     {
+//         let res = gPrevFrameReservoirs[prevFramePix1D];
+//         uint M = currentReservoir.M + res.M;
+//         float fixedW = res.wSum * (length(res.ps) / length(currentReservoir.ps));
+//         currentReservoir.update(res.s, fixedW, res.ps);
+//         currentReservoir.M = M;
+//     }
+//     // TODO: clamp M
+//     if (currentReservoir.M > 30)
+//     {
+//         currentReservoir.wSum *= (float)30 / currentReservoir.M;
+//         currentReservoir.M = 30;
+//     }
+//     gTemporalReservoirs[pixel.x + gFrameDim.x * pixel.y] = currentReservoir;
+//     gPrevFrameReservoirs[pixel.x + gFrameDim.x * pixel.y] = currentReservoir;
+// }
 
 /** Initial Sampling
     \param[in] pixel
