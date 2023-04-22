@@ -26,7 +26,7 @@ void spatialResampling(uint2 pixel)
     // TODO:
     GIReservoir master = GIReservoir();
     GISample s = gTemporalReservoirs[pixel.x + gFrameDim.x * pixel.y].s;
-    master.update(s, length(s.Lo) * s.invPdf, s.Lo);
+    master.update(s, length(s.Lo) * s.invPdf, s.rand);
     for (uint i = 0; i < kSpatialNeigborsNum; i++)
     {
         float2 u2 = sampleNext2D(sg);
@@ -47,7 +47,7 @@ void spatialResampling(uint2 pixel)
             float len_q = q2q.x * q2q.x + q2q.y * q2q.y + q2q.z * q2q.z;
             float len_r = r2q.x * r2q.x + r2q.y * r2q.y + r2q.z * r2q.z;
             float J = abs((cos_r * len_q) / (cos_q * len_r));
-            master.merge(rn, rn.ps / J);
+            master.merge(rn, length(rn.ps) / J);
         }
         if (master.M > 500)
         {

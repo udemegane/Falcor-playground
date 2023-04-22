@@ -556,7 +556,7 @@ float3 generateInitialSample(
     const ShadingData sd,
     const IMaterialInstance mi,
     const bool isCurveHit,
-    SampleGenerator sg,
+    inout SampleGenerator sg,
     inout GISample sample
 )
 {
@@ -610,19 +610,19 @@ float3 generateInitialSample(
     \param[in] s
 */
 
-void temporalResampling(const uint2 pixel, const GISample s)
+void temporalResampling(const uint2 pixel, const GISample s, inout SampleGenerator sg)
 {
     // temporal reservoirsの初期化をお願いマッスル
     int2 prevPixelPos = (int2)pixel + int2(gFrameDim * gMotionVector[pixel].xy);
     int prevFramePix1D = prevPixelPos.x + (int)gFrameDim.x * prevPixelPos.y;
     GIReservoir currentReservoir = GIReservoir();
-    currentReservoir.update(s, length(s.Lo) * s.invPdf, s.Lo);
+    currentReservoir.update(s, length(s.Lo) * s.invPdf, s.rand);
 
     if (prevFramePix1D >= 0 && prevFramePix1D < gFrameDim.x * gFrameDim.y)
     {
         ;
         let res = gPrevFrameReservoirs[prevFramePix1D];
-        currentReservoir.merge(res, res.ps);
+        currentReservoir.merge(res, length(res.ps));
     }
 
     // TODO: clamp M
@@ -712,7 +712,7 @@ void sampling(uint2 pixel, uint2 screen)
 
         GISample giSample;
         gThroughput[pixel] = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg, giSample);
-        temporalResampling(pixel, giSample);
+        temporalResampling(pixel, giSample, sg);
         gInitSamples[pixel.x + screen.x * pixel.y] = giSample;
         // }
     }

@@ -14,34 +14,37 @@ struct GIReservoir
     GISample s;
     float wSum;
     uint M;
-    float3 ps;
+    // uint updateCounts;
+    float3 ps; // Pdf(Sample)
     __init()
     {
         wSum = 0.f;
         M = 0;
-        ps = float3(0.f);
+        // updateCounts = 0;
+        ps = 0.f;
     }
 
     [mutating]
-    bool update(const GISample si, const float wi, const float3 pi)
+    bool update(const GISample si, const float wi, const float u)
     {
         wSum += wi;
-        bool accept = si.rand <= wi / wSum;
+        bool accept = u <= wi / wSum;
         if (accept || M == 0)
         {
             s = si;
-            ps = pi;
+            ps = si.Lo;
+            // updateCounts++;
         }
         M++;
         return accept;
     }
 
     [mutating]
-    void merge(GIReservoir ri, float3 pi)
+    void merge(GIReservoir ri, float p)
     {
         uint tempM = M;
-        float fixedW = ri.wSum * (length(pi) / length(ps));
-        update(ri.s, fixedW, pi);
+        float fixedW = ri.wSum * (p / length(ps));
+        update(ri.s, fixedW, ri.s.rand);
         M = tempM + ri.M;
     }
 
