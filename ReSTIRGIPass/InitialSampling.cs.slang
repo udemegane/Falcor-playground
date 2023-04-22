@@ -580,9 +580,9 @@ float3 generateInitialSample(
     if (traceRayInline(ray, hit, hitT))
     {
         // Compute Indirect radiance
-        if (sampleNext1D(sg) <= prr && handleHit(hit, rayData))
+        if (sampleNext1D(sg) <= prrSecondry && handleHit(hit, rayData))
         {
-            rayData.throughput *= invPrr;
+            rayData.throughput *= invPrrSecondry;
             pathTrace(rayData);
         }
 
