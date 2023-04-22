@@ -14,6 +14,7 @@ struct GIReservoir
     GISample s;
     float wSum;
     uint M;
+    uint updateCounts;
     float3 ps;
     __init()
     {

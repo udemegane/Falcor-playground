@@ -22,9 +22,9 @@ import Rendering.Utils.PixelStats;
 import GIReservoir;
 
 // あとでマジックナンバーやめる
-static const float prr = 0.6f;
+static const float prr = 0.7f;
 static const float invPrr = 1.0 / prr;
-static const float prrSecondry = 0.6f;
+static const float prrSecondry = 0.25f;
 static const float invPrrSecondry = 1.0 / prrSecondry;
 static const bool kUseImportanceSampling = true;
 static const uint kMaxBounces = 10;
@@ -36,7 +36,7 @@ Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float3> gNormal;
 Texture2D<float3> gPositionW;
 Texture2D<float4> gNoise;
-Texture2D<float4> gMotionVector;
+Texture2D<float2> gMotionVector;
 
 RWStructuredBuffer<GIReservoir> gPrevFrameReservoirs;
 RWStructuredBuffer<GIReservoir> gTemporalReservoirs;
@@ -334,7 +334,7 @@ float3 evalDirectAnalytic(const ShadingData sd, const IMaterialInstance mi, inou
     // Sample local light source.
     AnalyticLightSample ls;
     if (!sampleLight(sd.posW, gScene.getLight(lightIndex), sg, ls))
-        return float3(0.0f, 0.0f, 0.f);
+        return float3(0.0f);
 
     // Reject sample if not in the hemisphere of a BSDF lobe.
     const uint lobeTypes = mi.getLobeTypes(sd);
@@ -500,6 +500,7 @@ bool prepareInitialSampleRay(
         const uint lobeTypes = mi.getLobeTypes(sd);
         const bool hasReflection = lobeTypes & uint(LobeType::Reflection);
         const bool hasTransmission = lobeTypes & uint(LobeType::Transmission);
+
         invPdf = hasReflection && hasTransmission ? M_4PI : M_2PI;
         randomDir = (dot(randomDir, sd.N) < kMinCosTheta) && hasReflection && !hasTransmission ? -randomDir : randomDir;
         randomDir = hasTransmission && !hasReflection ? -randomDir : randomDir;
@@ -512,6 +513,7 @@ bool prepareInitialSampleRay(
             rayData.origin = sd.computeNewRayOrigin();
         rayData.direction = randomDir;
         rayData.throughput *= mi.eval(sd, randomDir, rayData.sg) * invPdf * abs(dot(randomDir, max(sd.N, sd.faceN)));
+        return true;
         break;
     case InitialSamplePDFType::CosineWeighted:
         // TODO implement this.
@@ -529,7 +531,7 @@ bool prepareInitialSampleRay(
                 rayData.origin = sd.computeNewRayOrigin();
             rayData.direction = result.wo;
             rayData.throughput *= result.weight;
-            invPdf = 1.0f / mi.evalPdf(sd, result.wo, true);
+            invPdf = 1.0f / result.pdf;
             return any(rayData.throughput > 0.f);
         }
         else
@@ -580,9 +582,9 @@ float3 generateInitialSample(
     if (traceRayInline(ray, hit, hitT))
     {
         // Compute Indirect radiance
-        if (sampleNext1D(sg) <= prr && handleHit(hit, rayData))
+        if (sampleNext1D(sg) <= prrSecondry && handleHit(hit, rayData))
         {
-            rayData.throughput *= invPrr;
+            rayData.throughput *= invPrrSecondry;
             pathTrace(rayData);
         }
 
@@ -612,13 +614,18 @@ float3 generateInitialSample(
 
 void temporalResampling(const uint2 pixel, const GISample s)
 {
-    // temporal reservoirsの初期化をお願いマッスル
     int2 prevPixelPos = (int2)pixel + int2(gFrameDim * gMotionVector[pixel].xy);
     int prevFramePix1D = prevPixelPos.x + (int)gFrameDim.x * prevPixelPos.y;
     GIReservoir currentReservoir = GIReservoir();
-    if (prevFramePix1D >= 0 && prevFramePix1D < gFrameDim.x * gFrameDim.y)
-        currentReservoir = gPrevFrameReservoirs[prevFramePix1D];
     currentReservoir.update(s, length(s.Lo) * s.invPdf, s.Lo);
+    if (prevFramePix1D >= 0 && prevFramePix1D < gFrameDim.x * gFrameDim.y)
+    {
+        let res = gPrevFrameReservoirs[prevFramePix1D];
+        uint M = currentReservoir.M + res.M;
+        float fixedW = res.wSum * (length(res.ps) / length(currentReservoir.ps));
+        currentReservoir.update(res.s, fixedW, res.ps);
+        currentReservoir.M = M;
+    }
     // TODO: clamp M
     if (currentReservoir.M > 30)
     {
@@ -626,6 +633,7 @@ void temporalResampling(const uint2 pixel, const GISample s)
         currentReservoir.M = 30;
     }
     gTemporalReservoirs[pixel.x + gFrameDim.x * pixel.y] = currentReservoir;
+    gPrevFrameReservoirs[pixel.x + gFrameDim.x * pixel.y] = currentReservoir;
 }
 
 /** Initial Sampling

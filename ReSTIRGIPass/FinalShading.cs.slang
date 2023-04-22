@@ -26,8 +26,14 @@ float3 finalShading(uint2 pixel)
     // TODO: implement this.
     // outColor = DirectLighting + sample.Lo*throughput
     uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
-    return gThroughput[pixel] * gFinalReservoirs[pixel1D].s.Lo; //* gFinalReservoirs[pixel1D].getInvPDF();
-    return gInitSamples[pixel1D].Lo * gThroughput[pixel];
+    // return gInitSamples[pixel1D].Lo;
+    GIReservoir res = gFinalReservoirs[pixel1D];
+
+    // 古いと青、新しいと赤
+    // return res.s.Lo * float3((500 - res.M) / 500.f, 1.0, res.M / 500.f);
+    return res.s.Lo * gThroughput[pixel];
+    //  return gThroughput[pixel] * gFinalReservoirs[pixel1D].s.Lo; //* gFinalReservoirs[pixel1D].getInvPDF();
+    // return gInitSamples[pixel1D].Lo * gThroughput[pixel];
 }
 
 [numthreads(16, 16, 1)]

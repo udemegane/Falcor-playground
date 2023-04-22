@@ -295,8 +295,9 @@ void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const Render
         desc.addShaderModules(mpScene->getShaderModules());
         desc.addShaderLibrary(kSpatialSamplingFile).setShaderModel(kShaderModel).csEntry("main");
         desc.addTypeConformances(mpScene->getTypeConformances());
-
         auto defines = mpScene->getSceneDefines();
+        FALCOR_ASSERT(mpSampleGenerator);
+        defines.add(mpSampleGenerator->getDefines());
         mpSpatialResamplingPass = ComputePass::create(mpDevice, desc, defines, true);
     }
     FALCOR_ASSERT(mpSpatialResamplingPass);
