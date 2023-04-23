@@ -88,9 +88,10 @@ private:
 
     Buffer::SharedPtr mpInitialSamples;
     Buffer::SharedPtr mpTemporalReservoirs;
+    Buffer::SharedPtr mpIntermediateReservoirs;
     Buffer::SharedPtr mpSpatialReservoirs;
 
-    Texture::SharedPtr mpPrimaryThroughput;
+//    Texture::SharedPtr mpPrimaryThroughput;
 
     SampleGenerator::SharedPtr mpSampleGenerator;
     EnvMapSampler::SharedPtr mpEnvMapSampler;

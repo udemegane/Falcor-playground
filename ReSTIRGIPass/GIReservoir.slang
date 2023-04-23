@@ -5,6 +5,7 @@ struct GISample
     float3 xs;
     float3 ns;
     float3 Lo;
+    float3 weight;
     float invPdf;
     __init()
     {
@@ -13,6 +14,7 @@ struct GISample
         xs = float3(0.f);
         ns = float3(0.f);
         Lo = float3(0.f);
+        weight = float3(0.f);
         invPdf = 0.f;
     }
 }

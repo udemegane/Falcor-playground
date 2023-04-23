@@ -13,7 +13,7 @@ RWTexture2D<float4> gSpecularRadiance;
 
 RWStructuredBuffer<GIReservoir> gFinalReservoirs;
 RWStructuredBuffer<GISample> gInitSamples;
-RWTexture2D<float3> gThroughput;
+// RWTexture2D<float3> gThroughput;
 
 cbuffer CB
 {
@@ -30,11 +30,15 @@ float3 finalShading(uint2 pixel)
     uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
     // return gThroughput[pixel] * gFinalReservoirs[pixel1D].s.Lo; //* gFinalReservoirs[pixel1D].getInvPDF();
     let res = gFinalReservoirs[pixel1D];
-    float3 estimated = pixel.x < gFrameDim.x / 2 ? res.s.Lo * res.getInvPDF() : gInitSamples[pixel1D].Lo;
-    return estimated * gThroughput[pixel];
-    return res.s.Lo * gThroughput[pixel];
+    float accept = res.updated;
+    // return accept;
 
-    return gInitSamples[pixel1D].Lo * gThroughput[pixel];
+    float3 estimated = pixel.x < gFrameDim.x / 1 ? res.s.Lo * res.getInvPDF() : gInitSamples[pixel1D].Lo;
+    estimated += gInitSamples[pixel1D].Lo;
+    return pixel.x < gFrameDim.x / 1 ? estimated * res.s.weight : estimated * gInitSamples[pixel1D].weight;
+    // return res.s.Lo * gThroughput[pixel];
+
+    // return gInitSamples[pixel1D].Lo * gThroughput[pixel];
 }
 
 [numthreads(16, 16, 1)]

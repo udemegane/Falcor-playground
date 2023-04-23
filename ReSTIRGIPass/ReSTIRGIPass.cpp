@@ -196,13 +196,13 @@ void ReSTIRGIPass::initialSampling(
             Buffer::CpuAccess::None, nullptr, false
         );
     }
-    if (!mpPrimaryThroughput)
-    {
-        mpPrimaryThroughput = Texture::create2D(
-            mpDevice.get(), (uint32_t)mFrameDim.x, (uint32_t)mFrameDim.y, ResourceFormat::RGBA32Float, 1, 1, nullptr,
-            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
-        );
-    }
+//    if (!mpPrimaryThroughput)
+//    {
+//        mpPrimaryThroughput = Texture::create2D(
+//            mpDevice.get(), (uint32_t)mFrameDim.x, (uint32_t)mFrameDim.y, ResourceFormat::RGBA32Float, 1, 1, nullptr,
+//            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
+//        );
+//    }
 
     if (!mpTemporalReservoirs)
     {
@@ -212,19 +212,21 @@ void ReSTIRGIPass::initialSampling(
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
         );
     }
-    if (!mpSpatialReservoirs)
+
+    if (!mpIntermediateReservoirs)
     {
         uint32_t reservoirCounts = mFrameDim.x * mFrameDim.y;
-        mpSpatialReservoirs = Buffer::createStructured(
-            mpDevice.get(), var["gPrevFrameReservoirs"], reservoirCounts,
+        mpIntermediateReservoirs = Buffer::createStructured(
+            mpDevice.get(), var["gIntermediateReservoirs"], reservoirCounts,
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
         );
     }
 
     var["gInitSamples"] = mpInitialSamples;
-    var["gThroughput"] = mpPrimaryThroughput;
     var["gTemporalReservoirs"] = mpTemporalReservoirs;
-    var["gPrevFrameReservoirs"] = mpSpatialReservoirs;
+//    var["gPrevFrameReservoirs"] = mpSpatialReservoirs;
+    var["gIntermediateReservoirs"] = mpIntermediateReservoirs;
+
 
     var["gVBuffer"] = pVBuffer;
     var["gNormal"] = pNormal;
@@ -297,11 +299,23 @@ void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const Render
         desc.addTypeConformances(mpScene->getTypeConformances());
 
         auto defines = mpScene->getSceneDefines();
+        defines.add(mpSampleGenerator->getDefines());
+
         mpSpatialResamplingPass = ComputePass::create(mpDevice, desc, defines, true);
     }
+
     FALCOR_ASSERT(mpSpatialResamplingPass);
     auto var = mpSpatialResamplingPass->getRootVar();
-    FALCOR_ASSERT(mpTemporalReservoirs);
+
+    if (!mpSpatialReservoirs)
+    {
+        uint32_t reservoirCounts = mFrameDim.x * mFrameDim.y;
+        mpSpatialReservoirs = Buffer::createStructured(
+            mpDevice.get(), var["gSpatialReservoirs"], reservoirCounts,
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+        );
+    }
+    FALCOR_ASSERT(mpIntermediateReservoirs);
     FALCOR_ASSERT(mpSpatialReservoirs);
     //    if(!mpSpatialReservoirs){
     //        uint32_t reservoirCounts=mFrameDim.x*mFrameDim.y;
@@ -310,8 +324,9 @@ void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const Render
     //            ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
     //        );
     //    }
-    var["gSpatialReservoirs"] = mpSpatialReservoirs;
     var["gTemporalReservoirs"] = mpTemporalReservoirs;
+    var["gSpatialReservoirs"] = mpSpatialReservoirs;
+    var["gIntermediateReservoirs"] = mpIntermediateReservoirs;
 
     var["gNoise"] = pNoiseTexture;
 
@@ -322,6 +337,7 @@ void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const Render
     var["gScene"] = mpScene->getParameterBlock();
 
     mpSampleGenerator->setShaderData(var);
+    mpScene->setRaytracingShaderData(pRenderContext, var);
     mpSpatialResamplingPass->execute(pRenderContext, {mFrameDim, 1u});
 }
 
@@ -341,11 +357,9 @@ void ReSTIRGIPass::finalShading(RenderContext* pRenderContext, const RenderData&
     mpFinalShadingPass->getProgram()->addDefines(getValidResourceDefines(kOutputChannels, renderData));
     auto var = mpFinalShadingPass->getRootVar();
     FALCOR_ASSERT(mpSpatialReservoirs);
-    FALCOR_ASSERT(mpPrimaryThroughput);
 
     var["gInitSamples"] = mpInitialSamples;
     var["gFinalReservoirs"] = mpSpatialReservoirs;
-    var["gThroughput"] = mpPrimaryThroughput;
     var["gNoise"] = pNoiseTexture;
 
     var["CB"]["gFrameCount"] = mFrameCount;
@@ -361,6 +375,7 @@ void ReSTIRGIPass::finalShading(RenderContext* pRenderContext, const RenderData&
     };
     for (const auto& channel : kOutputChannels)
         bind(channel);
+
     mpFinalShadingPass->execute(pRenderContext, {mFrameDim, 1u});
 }
 

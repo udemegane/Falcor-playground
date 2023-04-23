@@ -24,7 +24,7 @@ import GIReservoir;
 // あとでマジックナンバーやめる
 static const float prr = 0.6f;
 static const float invPrr = 1.0 / prr;
-static const float prrSecondry = 0.25f;
+static const float prrSecondry = 0.20f;
 static const float invPrrSecondry = 1.0 / prrSecondry;
 static const bool kUseImportanceSampling = true;
 static const uint kMaxBounces = 10;
@@ -32,7 +32,7 @@ static const bool kUseEnvLight = true;
 static const bool kUseEmissiveLights = true;
 static const bool kUseAnalyticLights = true;
 static const bool kUseTemporalResampling = true;
-static const uint kTemporalMax = 15;
+static const uint kTemporalMax = 10;
 static const bool kUseInfinitBounce = true;
 
 Texture2D<PackedHitInfo> gVBuffer;
@@ -41,10 +41,12 @@ Texture2D<float3> gPositionW;
 Texture2D<float4> gNoise;
 Texture2D<float4> gMotionVector;
 
-RWStructuredBuffer<GIReservoir> gPrevFrameReservoirs;
+// RWStructuredBuffer<GIReservoir> gPrevFrameReservoirs;
 RWStructuredBuffer<GIReservoir> gTemporalReservoirs;
+RWStructuredBuffer<GIReservoir> gIntermediateReservoirs;
+
 RWStructuredBuffer<GISample> gInitSamples;
-RWTexture2D<float3> gThroughput;
+// RWTexture2D<float3> gThroughput;
 
 cbuffer CB
 {
@@ -102,6 +104,14 @@ struct LightSampler
         this.emmisiveSampler = emissiveSampler;
         this.envmapSampler = envmapSampler;
     }
+}
+
+uint2 getPrevPixel(float3 pos, Camera camera)
+{
+    float4 prevClip = mul(camera.data.prevViewProjMatNoJitter, float4(pos, 1.0));
+    float2 prevUV = float2((prevClip.x / prevClip.w) * 0.5 + 0.5, (-prevClip.y / prevClip.w) * 0.5 + 0.5);
+    uint2 prevPix = uint2(prevUV.x * gFrameDim.x, prevUV.y * gFrameDim.y);
+    return prevPix;
 }
 
 ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const float3 rayDir, const ITextureSampler lod)
@@ -550,18 +560,10 @@ bool prepareInitialSampleRay(
     \param[in] mi Material Data of Xv
     \param[in] isCurveHit
     \param[inout] sg Sample Generator
-    \param[inout] radiance
-    \param[inout] sample Sampled Data of Xs
-    \return True if success to generate sample.
+    \return GISample
 */
 
-GISample generateInitialSample(
-    const ShadingData sd,
-    const IMaterialInstance mi,
-    const bool isCurveHit,
-    inout SampleGenerator sg,
-    out float3 weight
-)
+GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi, const bool isCurveHit, inout SampleGenerator sg, )
 {
     BSDFSample result;
 
@@ -578,7 +580,7 @@ GISample generateInitialSample(
     float hitT;
 
     // Init ray throughput weight for spatial resampling.
-    weight = rayData.throughput;
+    float3 weight = rayData.throughput;
     rayData.throughput = float3(1.0f);
     if (traceRayInline(ray, hit, hitT))
     {
@@ -599,6 +601,8 @@ GISample generateInitialSample(
         ShadingData sampledSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
         sample.xs = sampledSd.posW;
         sample.ns = max(sampledSd.N, sampledSd.faceN);
+
+        sample.weight = weight;
         sample.invPdf = invPdf;
 
         return sample;
@@ -614,10 +618,11 @@ GISample generateInitialSample(
     \param[in] s
 */
 
-void temporalResampling(const uint2 pixel, const GISample s, inout SampleGenerator sg)
+void temporalResampling(const uint2 pixel, const float3 pos, const GISample s, inout SampleGenerator sg)
 {
     // temporal reservoirsの初期化をお願いマッスル
-    int2 prevPixelPos = (int2)pixel + int2(gFrameDim * gMotionVector[pixel].xy);
+    uint2 prevPix = getPrevPixel(pos, gScene.camera);
+    int2 prevPixelPos = (int2)prevPix; // + int2(gFrameDim * gMotionVector[pixel].xy);
     int prevFramePix1D = prevPixelPos.x + (int)gFrameDim.x * prevPixelPos.y;
     GIReservoir currentReservoir = GIReservoir();
     currentReservoir.update(s, length(s.Lo) * s.invPdf, sampleNext1D(sg));
@@ -626,7 +631,7 @@ void temporalResampling(const uint2 pixel, const GISample s, inout SampleGenerat
     {
         if (prevFramePix1D >= 0 && prevFramePix1D < gFrameDim.x * gFrameDim.y)
         {
-            GIReservoir res = gPrevFrameReservoirs[prevFramePix1D];
+            GIReservoir res = gTemporalReservoirs[prevFramePix1D];
             if (res.dummy)
             {
                 bool accept = res.update(s, length(s.Lo) * s.invPdf, sampleNext1D(sg));
@@ -644,7 +649,7 @@ void temporalResampling(const uint2 pixel, const GISample s, inout SampleGenerat
         }
     }
 
-    gTemporalReservoirs[pixel.x + gFrameDim.x * pixel.y] = currentReservoir;
+    gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y] = currentReservoir;
 }
 
 /** Initial Sampling
@@ -658,7 +663,7 @@ void sampling(uint2 pixel, uint2 screen)
     // float3 randVec = gNoise[noiseSeed].xyz;
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
     float3 color = float3(0.f);
-    const bool computeDirect = false;
+    const bool computeDirect = true;
 
     float3 primaryRayDir = gScene.camera.computeRayPinhole(pixel, screen, false).dir;
     float3 primaryRayOrigin = gScene.camera.getPosition();
@@ -678,11 +683,11 @@ void sampling(uint2 pixel, uint2 screen)
             color += evalDirectAnalytic(sd, mi, sg);
         }
 
-        float3 weight;
-        let sample = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg, weight);
-        gInitSamples[pixel.x + screen.x * pixel.y] = sample;
-        gThroughput[pixel] = weight;
-        temporalResampling(pixel, sample, sg);
+        GISample sample = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg);
+        GISample dummy = GISample();
+        dummy.Lo = color;
+        gInitSamples[pixel.x + screen.x * pixel.y] = dummy;
+        temporalResampling(pixel, sd.posW, sample, sg);
     }
     else
     {
