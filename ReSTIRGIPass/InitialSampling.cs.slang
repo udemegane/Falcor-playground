@@ -552,12 +552,12 @@ bool prepareInitialSampleRay(
     \return True if success to generate sample.
 */
 
-float3 generateInitialSample(
+GISample generateInitialSample(
     const ShadingData sd,
     const IMaterialInstance mi,
     const bool isCurveHit,
     inout SampleGenerator sg,
-    inout GISample sample
+    out float3 weight
 )
 {
     BSDFSample result;
@@ -575,7 +575,7 @@ float3 generateInitialSample(
     float hitT;
 
     // Init ray throughput weight for spatial resampling.
-    float3 throughput = rayData.throughput;
+    weight = rayData.throughput;
     rayData.throughput = float3(1.0f);
     if (traceRayInline(ray, hit, hitT))
     {
@@ -583,25 +583,26 @@ float3 generateInitialSample(
         if (sampleNext1D(sg) <= prrSecondry && handleHit(hit, rayData))
         {
             rayData.throughput *= invPrrSecondry;
-            pathTrace(rayData);
+            // pathTrace(rayData);
         }
-
+        GISample sample = GISample(sampleNext1D(sg));
         // Set sample.
-        sample.rand = sampleNext1D(sg);
         sample.Lo = rayData.radiance;
         sample.xv = sd.posW;
         sample.nv = max(sd.N, sd.faceN);
         let lod = ExplicitLodTextureSampler(0.f);
         ShadingData sampledSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
         sample.xs = sampledSd.posW;
+        // sample.xs = sd.posW;
         sample.ns = max(sampledSd.N, sampledSd.faceN);
+        // sample.ns = max(sd.N, sd.faceN);
         sample.invPdf = invPdf;
 
-        return throughput;
+        return sample;
     }
     else
     {
-        return float3(-1.0f);
+        return GISample(-1.0f);
     }
 }
 
@@ -633,30 +634,6 @@ void temporalResampling(const uint2 pixel, const GISample s, inout SampleGenerat
     }
     gTemporalReservoirs[pixel.x + gFrameDim.x * pixel.y] = currentReservoir;
 }
-
-// void temporalResampling(const uint2 pixel, const GISample s)
-// {
-//     int2 prevPixelPos = (int2)pixel + int2(gFrameDim * gMotionVector[pixel].xy);
-//     int prevFramePix1D = prevPixelPos.x + (int)gFrameDim.x * prevPixelPos.y;
-//     GIReservoir currentReservoir = GIReservoir();
-//     currentReservoir.update(s, length(s.Lo) * s.invPdf, s.Lo);
-//     if (prevFramePix1D >= 0 && prevFramePix1D < gFrameDim.x * gFrameDim.y)
-//     {
-//         let res = gPrevFrameReservoirs[prevFramePix1D];
-//         uint M = currentReservoir.M + res.M;
-//         float fixedW = res.wSum * (length(res.ps) / length(currentReservoir.ps));
-//         currentReservoir.update(res.s, fixedW, res.ps);
-//         currentReservoir.M = M;
-//     }
-//     // TODO: clamp M
-//     if (currentReservoir.M > 30)
-//     {
-//         currentReservoir.wSum *= (float)30 / currentReservoir.M;
-//         currentReservoir.M = 30;
-//     }
-//     gTemporalReservoirs[pixel.x + gFrameDim.x * pixel.y] = currentReservoir;
-//     gPrevFrameReservoirs[pixel.x + gFrameDim.x * pixel.y] = currentReservoir;
-// }
 
 /** Initial Sampling
     \param[in] pixel
@@ -695,25 +672,20 @@ void sampling(uint2 pixel, uint2 screen)
         //     // referenceと結果が一致するので挙動に問題なし
         //     ScatterRayData rayData = ScatterRayData(sg);
         //     prepareScatterRay(sd, mi, sd.computeNewRayOrigin(), rayData);
-        //     GISample sample;
+        //     GISample sample = GISample(0.f);
         //     pathTrace(rayData);
         //     sample.Lo = rayData.radiance;
-        //     sample.invPdf = 0.f;
-        //     sample.ns = float3(0.f);
-        //     sample.nv = float3(0.f);
-        //     sample.xs = float3(0.f);
-        //     sample.xv = float3(0.f);
-        //     sample.rand = 0.f;
         //     gThroughput[pixel] = float3(1.0f);
         //     gInitSamples[pixel.x + screen.x * pixel.y] = sample;
         // }
         // else
         // {
 
-        GISample giSample;
-        gThroughput[pixel] = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg, giSample);
-        temporalResampling(pixel, giSample, sg);
-        gInitSamples[pixel.x + screen.x * pixel.y] = giSample;
+        float3 weight;
+        let sample = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg, weight);
+        gInitSamples[pixel.x + screen.x * pixel.y] = sample;
+        gThroughput[pixel] = weight;
+        temporalResampling(pixel, sample, sg);
         // }
     }
     else
