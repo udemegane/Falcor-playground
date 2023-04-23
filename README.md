@@ -9,9 +9,21 @@ A repository for the study of Real-time rendering and Computer graphics theory.
 I use [Nvidia Falcor](https://github.com/NVIDIAGameWorks/Falcor) for the framework and I implement the custom render pass.
 
 ---
+### ReSTIR GI 🚧
+![](Images/Mogwai.ToneMapper.dst.47100.png)
+[ReSTIRをベースにした効率的なパスサンプリング手法(for Indirect Lighting)](https://research.nvidia.com/publication/2021-06_restir-gi-path-resampling-real-time-path-tracing)です。
+
+
+- [x] Temporal Resampling
+- [x] Spatial Resampling
+- [ ] Spatial Resampling (Unbiased)
+- [ ] Sample Varification
+
+
+---
 ### ReSTIR
 ![](Images/2023-02-11-02-56-08.png)
-低分散なレイトレーシング手法である[ReSTIR](https://research.nvidia.com/publication/2020-07_spatiotemporal-reservoir-resampling-real-time-ray-tracing-dynamic-direct)の再現実装です。
+低分散なレイトレーシング手法である[ReSTIR](https://research.nvidia.com/publication/2020-07_spatiotemporal-reservoir-resampling-real-time-ray-tracing-dynamic-direct)の再現です。
 [詳細はこちら](https://blog.udemegane.net/p/restir%E3%82%92%E5%AE%9F%E8%A3%85%E3%81%99%E3%82%8B-%E3%81%9D%E3%81%AE1/)
 - [x] WRS
 - [x] Temporal Reuse
