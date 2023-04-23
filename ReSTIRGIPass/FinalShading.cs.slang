@@ -1,4 +1,5 @@
 #include "Scene/SceneDefines.slangh"
+#include "Utils/Math/MathConstants.slangh"
 
 import Scene.Scene;
 import Scene.HitInfo;
@@ -29,10 +30,10 @@ float3 finalShading(uint2 pixel)
     uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
     // return gThroughput[pixel] * gFinalReservoirs[pixel1D].s.Lo; //* gFinalReservoirs[pixel1D].getInvPDF();
     let res = gFinalReservoirs[pixel1D];
-    // return float3((float)res.updated);
-    return res.s.Lo * res.getInvPDF() * gThroughput[pixel];
+    float3 estimated = pixel.x < gFrameDim.x / 2 ? res.s.Lo * res.getInvPDF() : gInitSamples[pixel1D].Lo;
+    return estimated * gThroughput[pixel];
     return res.s.Lo * gThroughput[pixel];
-    return gInitSamples[pixel1D].Lo;
+
     return gInitSamples[pixel1D].Lo * gThroughput[pixel];
 }
 

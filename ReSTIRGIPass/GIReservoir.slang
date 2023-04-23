@@ -23,7 +23,6 @@ struct GIReservoir
     float wSum;
     uint M;
     bool dummy;
-    // uint updateCounts;
     bool updated;
     float3 ps; // Pdf(Sample)
     __init()
@@ -32,7 +31,6 @@ struct GIReservoir
         wSum = 0.f;
         M = 0;
         updated = false;
-        // updateCounts = 0;
         ps = 0.f;
     }
 
@@ -45,7 +43,6 @@ struct GIReservoir
         {
             s = si;
             ps = si.Lo;
-            // updateCounts++;
         }
         M++;
         return accept;
@@ -61,6 +58,6 @@ struct GIReservoir
         return accept;
     }
 
-    float getInvPDF() { return wSum / (M * length(ps)); }
+    float getInvPDF() { return wSum / (M * length(ps) * s.invPdf); }
 }
 

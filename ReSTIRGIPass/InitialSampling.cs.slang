@@ -32,7 +32,8 @@ static const bool kUseEnvLight = true;
 static const bool kUseEmissiveLights = true;
 static const bool kUseAnalyticLights = true;
 static const bool kUseTemporalResampling = true;
-static const uint kTemporalMax = 10;
+static const uint kTemporalMax = 15;
+static const bool kUseInfinitBounce = true;
 
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float3> gNormal;
@@ -481,7 +482,7 @@ enum class InitialSamplePDFType
     \param[in] isCurveHit
     \param[in] mi
     \param[inout] rayData
-    \param[out] invPdf
+    \param[out] xvInvPdf
     \return True if sucsess to generate ray payload.
 */
 
@@ -491,7 +492,7 @@ bool prepareInitialSampleRay(
     const bool isCurveHit,
     const IMaterialInstance mi,
     inout ScatterRayData rayData,
-    out float invPdf
+    out float xvInvPdf
 )
 {
     switch (method)
@@ -502,7 +503,7 @@ bool prepareInitialSampleRay(
         const uint lobeTypes = mi.getLobeTypes(sd);
         const bool hasReflection = lobeTypes & uint(LobeType::Reflection);
         const bool hasTransmission = lobeTypes & uint(LobeType::Transmission);
-        invPdf = hasReflection && hasTransmission ? M_4PI : M_2PI;
+        xvInvPdf = hasReflection && hasTransmission ? M_4PI : M_2PI;
         randomDir = (dot(randomDir, sd.N) < kMinCosTheta) && hasReflection && !hasTransmission ? -randomDir : randomDir;
         randomDir = hasTransmission && !hasReflection ? -randomDir : randomDir;
 
@@ -513,7 +514,7 @@ bool prepareInitialSampleRay(
         else
             rayData.origin = sd.computeNewRayOrigin();
         rayData.direction = randomDir;
-        rayData.throughput *= mi.eval(sd, randomDir, rayData.sg) * invPdf * abs(dot(randomDir, max(sd.N, sd.faceN)));
+        rayData.throughput *= mi.eval(sd, randomDir, rayData.sg) * xvInvPdf * abs(dot(randomDir, max(sd.N, sd.faceN)));
         break;
     case InitialSamplePDFType::CosineWeighted:
         // TODO implement this.
@@ -531,7 +532,7 @@ bool prepareInitialSampleRay(
                 rayData.origin = sd.computeNewRayOrigin();
             rayData.direction = result.wo;
             rayData.throughput *= result.weight;
-            invPdf = 1.0f / mi.evalPdf(sd, result.wo, true);
+            xvInvPdf = 1.0f / result.pdf;
             return any(rayData.throughput > 0.f);
         }
         else
@@ -569,7 +570,7 @@ GISample generateInitialSample(
     float invPdf = 0.f;
 
     // terminatedの処理が怪しい
-    prepareInitialSampleRay(InitialSamplePDFType::BSDF, sd, isCurveHit, mi, rayData, invPdf);
+    prepareInitialSampleRay(InitialSamplePDFType::Uniform, sd, isCurveHit, mi, rayData, invPdf);
 
     // Launch ray.
     Ray ray = Ray(rayData.origin, rayData.direction, 0.f, FLT_MAX);
@@ -582,7 +583,8 @@ GISample generateInitialSample(
     if (traceRayInline(ray, hit, hitT))
     {
         // Compute Indirect radiance
-        if (sampleNext1D(sg) <= prrSecondry && handleHit(hit, rayData))
+        bool validHit = handleHit(hit, rayData);
+        if (sampleNext1D(sg) <= prrSecondry && validHit && kUseInfinitBounce)
         {
             rayData.throughput *= invPrrSecondry;
             pathTrace(rayData);
@@ -592,12 +594,11 @@ GISample generateInitialSample(
         sample.Lo = rayData.radiance;
         sample.xv = sd.posW;
         sample.nv = max(sd.N, sd.faceN);
+
         let lod = ExplicitLodTextureSampler(0.f);
         ShadingData sampledSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
         sample.xs = sampledSd.posW;
-        // sample.xs = sd.posW;
         sample.ns = max(sampledSd.N, sampledSd.faceN);
-        // sample.ns = max(sd.N, sd.faceN);
         sample.invPdf = invPdf;
 
         return sample;
@@ -675,29 +676,13 @@ void sampling(uint2 pixel, uint2 screen)
         {
             color += (mi.getProperties(sd).emission);
             color += evalDirectAnalytic(sd, mi, sg);
-            // color = sd.N;
         }
-        // if (false)
-        // {
-        //     // Simple path tracer
-        //     // referenceと結果が一致するので挙動に問題なし
-        //     ScatterRayData rayData = ScatterRayData(sg);
-        //     prepareScatterRay(sd, mi, sd.computeNewRayOrigin(), rayData);
-        //     GISample sample = GISample(0.f);
-        //     pathTrace(rayData);
-        //     sample.Lo = rayData.radiance;
-        //     gThroughput[pixel] = float3(1.0f);
-        //     gInitSamples[pixel.x + screen.x * pixel.y] = sample;
-        // }
-        // else
-        // {
 
         float3 weight;
         let sample = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg, weight);
         gInitSamples[pixel.x + screen.x * pixel.y] = sample;
         gThroughput[pixel] = weight;
         temporalResampling(pixel, sample, sg);
-        // }
     }
     else
     {
