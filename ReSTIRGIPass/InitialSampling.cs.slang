@@ -593,8 +593,8 @@ float3 generateInitialSample(
         sample.nv = max(sd.N, sd.faceN);
         let lod = ExplicitLodTextureSampler(0.f);
         ShadingData sampledSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
-        sample.xs = sd.posW;
-        sample.ns = max(sd.N, sd.faceN);
+        sample.xs = sampledSd.posW;
+        sample.ns = max(sampledSd.N, sampledSd.faceN);
         sample.invPdf = invPdf;
 
         return throughput;
