@@ -24,13 +24,15 @@ import GIReservoir;
 // あとでマジックナンバーやめる
 static const float prr = 0.6f;
 static const float invPrr = 1.0 / prr;
-static const float prrSecondry = 0.6f;
+static const float prrSecondry = 0.25f;
 static const float invPrrSecondry = 1.0 / prrSecondry;
 static const bool kUseImportanceSampling = true;
 static const uint kMaxBounces = 10;
 static const bool kUseEnvLight = true;
 static const bool kUseEmissiveLights = true;
 static const bool kUseAnalyticLights = true;
+static const bool kUseTemporalResampling = true;
+static const uint kTemporalMax = 10;
 
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float3> gNormal;
@@ -583,9 +585,9 @@ GISample generateInitialSample(
         if (sampleNext1D(sg) <= prrSecondry && handleHit(hit, rayData))
         {
             rayData.throughput *= invPrrSecondry;
-            // pathTrace(rayData);
+            pathTrace(rayData);
         }
-        GISample sample = GISample(sampleNext1D(sg));
+        GISample sample = GISample();
         // Set sample.
         sample.Lo = rayData.radiance;
         sample.xv = sd.posW;
@@ -602,7 +604,7 @@ GISample generateInitialSample(
     }
     else
     {
-        return GISample(-1.0f);
+        return GISample();
     }
 }
 
@@ -617,21 +619,30 @@ void temporalResampling(const uint2 pixel, const GISample s, inout SampleGenerat
     int2 prevPixelPos = (int2)pixel + int2(gFrameDim * gMotionVector[pixel].xy);
     int prevFramePix1D = prevPixelPos.x + (int)gFrameDim.x * prevPixelPos.y;
     GIReservoir currentReservoir = GIReservoir();
-    currentReservoir.update(s, length(s.Lo) * s.invPdf, s.rand);
+    currentReservoir.update(s, length(s.Lo) * s.invPdf, sampleNext1D(sg));
 
-    if (prevFramePix1D >= 0 && prevFramePix1D < gFrameDim.x * gFrameDim.y)
+    if (kUseTemporalResampling)
     {
-        ;
-        let res = gPrevFrameReservoirs[prevFramePix1D];
-        currentReservoir.merge(res, length(res.ps));
+        if (prevFramePix1D >= 0 && prevFramePix1D < gFrameDim.x * gFrameDim.y)
+        {
+            GIReservoir res = gPrevFrameReservoirs[prevFramePix1D];
+            if (res.dummy)
+            {
+                bool accept = res.update(s, length(s.Lo) * s.invPdf, sampleNext1D(sg));
+                currentReservoir = res;
+                currentReservoir.updated = accept;
+            }
+
+            // currentReservoir.updated = currentReservoir.merge(res, length(res.ps));
+        }
+        // TODO: clamp M
+        if (currentReservoir.M > kTemporalMax)
+        {
+            currentReservoir.wSum *= (float)kTemporalMax / currentReservoir.M;
+            currentReservoir.M = kTemporalMax;
+        }
     }
 
-    // TODO: clamp M
-    if (currentReservoir.M > 30)
-    {
-        currentReservoir.wSum *= (float)30 / currentReservoir.M;
-        currentReservoir.M = 30;
-    }
     gTemporalReservoirs[pixel.x + gFrameDim.x * pixel.y] = currentReservoir;
 }
 

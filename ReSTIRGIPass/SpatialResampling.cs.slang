@@ -22,11 +22,16 @@ cbuffer CB
 
 void spatialResampling(uint2 pixel)
 {
+    uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
+
+    gSpatialReservoirs[pixel1D] = gTemporalReservoirs[pixel1D];
+    return;
+
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
     // TODO:
     GIReservoir master = GIReservoir();
     GISample s = gTemporalReservoirs[pixel.x + gFrameDim.x * pixel.y].s;
-    master.update(s, length(s.Lo) * s.invPdf, s.rand);
+    master.update(s, length(s.Lo) * s.invPdf, sampleNext1D(sg));
     for (uint i = 0; i < kSpatialNeigborsNum; i++)
     {
         float2 u2 = sampleNext2D(sg);
@@ -47,7 +52,7 @@ void spatialResampling(uint2 pixel)
             float len_q = q2q.x * q2q.x + q2q.y * q2q.y + q2q.z * q2q.z;
             float len_r = r2q.x * r2q.x + r2q.y * r2q.y + r2q.z * r2q.z;
             float J = abs((cos_r * len_q) / (cos_q * len_r));
-            master.merge(rn, length(rn.ps) / J);
+            master.merge(rn, length(rn.ps) / J, sampleNext1D(sg));
         }
         if (master.M > 500)
         {
@@ -55,8 +60,6 @@ void spatialResampling(uint2 pixel)
             master.M = 500;
         }
     }
-    uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
-    // gSpatialReservoirs[pixel1D] = gTemporalReservoirs[pixel1D];
     gSpatialReservoirs[pixel1D] = master;
 }
 

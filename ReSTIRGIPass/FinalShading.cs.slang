@@ -25,8 +25,14 @@ float3 finalShading(uint2 pixel)
 {
     // TODO: implement this.
     // outColor = DirectLighting + sample.Lo*throughput
+
     uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
-    return gThroughput[pixel] * gFinalReservoirs[pixel1D].s.Lo; //* gFinalReservoirs[pixel1D].getInvPDF();
+    // return gThroughput[pixel] * gFinalReservoirs[pixel1D].s.Lo; //* gFinalReservoirs[pixel1D].getInvPDF();
+    let res = gFinalReservoirs[pixel1D];
+    // return float3((float)res.updated);
+    return res.s.Lo * res.getInvPDF() * gThroughput[pixel];
+    return res.s.Lo * gThroughput[pixel];
+    return gInitSamples[pixel1D].Lo;
     return gInitSamples[pixel1D].Lo * gThroughput[pixel];
 }
 
