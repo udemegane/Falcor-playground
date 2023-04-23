@@ -22,7 +22,7 @@ import Rendering.Utils.PixelStats;
 import GIReservoir;
 
 // あとでマジックナンバーやめる
-static const float prr = 0.6f;
+static const float prr = 0.7f;
 static const float invPrr = 1.0 / prr;
 static const float prrSecondry = 0.20f;
 static const float invPrrSecondry = 1.0 / prrSecondry;
@@ -39,7 +39,7 @@ Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float3> gNormal;
 Texture2D<float3> gPositionW;
 Texture2D<float4> gNoise;
-Texture2D<float4> gMotionVector;
+Texture2D<float2> gMotionVector;
 
 // RWStructuredBuffer<GIReservoir> gPrevFrameReservoirs;
 RWStructuredBuffer<GIReservoir> gTemporalReservoirs;
@@ -347,7 +347,7 @@ float3 evalDirectAnalytic(const ShadingData sd, const IMaterialInstance mi, inou
     // Sample local light source.
     AnalyticLightSample ls;
     if (!sampleLight(sd.posW, gScene.getLight(lightIndex), sg, ls))
-        return float3(0.0f, 0.0f, 0.f);
+        return float3(0.0f);
 
     // Reject sample if not in the hemisphere of a BSDF lobe.
     const uint lobeTypes = mi.getLobeTypes(sd);

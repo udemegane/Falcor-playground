@@ -150,8 +150,8 @@ void ReSTIRGIPass::execute(RenderContext* pRenderContext, const RenderData& rend
     FALCOR_ASSERT(pNoise);
     mNoiseDim = {pNoise.get()->getHeight(), pNoise.get()->getWidth()};
 
-    initialSampling(pRenderContext, renderData, pVBuffer, pNormal,pMVec,pNoise);
-//    temporalResampling(pRenderContext, renderData, pMVec, pNoise);
+    initialSampling(pRenderContext, renderData, pVBuffer, pNormal, pMVec, pNoise);
+    //    temporalResampling(pRenderContext, renderData, pMVec, pNoise);
     spatialResampling(pRenderContext, renderData, pNoise);
     finalShading(pRenderContext, renderData, pNoise);
     endFrame();
@@ -196,13 +196,13 @@ void ReSTIRGIPass::initialSampling(
             Buffer::CpuAccess::None, nullptr, false
         );
     }
-//    if (!mpPrimaryThroughput)
-//    {
-//        mpPrimaryThroughput = Texture::create2D(
-//            mpDevice.get(), (uint32_t)mFrameDim.x, (uint32_t)mFrameDim.y, ResourceFormat::RGBA32Float, 1, 1, nullptr,
-//            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
-//        );
-//    }
+    // if (!mpPrimaryThroughput)
+    // {
+    //     mpPrimaryThroughput = Texture::create2D(
+    //         mpDevice.get(), (uint32_t)mFrameDim.x, (uint32_t)mFrameDim.y, ResourceFormat::RGBA32Float, 1, 1, nullptr,
+    //         ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
+    //     );
+    // }
 
     if (!mpTemporalReservoirs)
     {
@@ -224,9 +224,8 @@ void ReSTIRGIPass::initialSampling(
 
     var["gInitSamples"] = mpInitialSamples;
     var["gTemporalReservoirs"] = mpTemporalReservoirs;
-//    var["gPrevFrameReservoirs"] = mpSpatialReservoirs;
+    //    var["gPrevFrameReservoirs"] = mpSpatialReservoirs;
     var["gIntermediateReservoirs"] = mpIntermediateReservoirs;
-
 
     var["gVBuffer"] = pVBuffer;
     var["gNormal"] = pNormal;
@@ -242,51 +241,51 @@ void ReSTIRGIPass::initialSampling(
     mpInitialSamplingPass->execute(pRenderContext, {mFrameDim, 1u});
 }
 
-//void ReSTIRGIPass::temporalResampling(
-//    RenderContext* pRenderContext,
-//    const RenderData& renderData,
-//    const Texture::SharedPtr& pMotionVector,
-//    const Texture::SharedPtr& pNoiseTexture
+// void ReSTIRGIPass::temporalResampling(
+//     RenderContext* pRenderContext,
+//     const RenderData& renderData,
+//     const Texture::SharedPtr& pMotionVector,
+//     const Texture::SharedPtr& pNoiseTexture
 //)
 //{
-//    FALCOR_ASSERT(pMotionVector);
-//    if (!mpTemporalResamplingPass)
-//    {
-//        Program::Desc desc;
-//        desc.addShaderModules(mpScene->getShaderModules());
-//        desc.addShaderLibrary(kTemporalSamplingFIle).setShaderModel(kShaderModel).csEntry("main");
-//        desc.addTypeConformances(mpScene->getTypeConformances());
+//     FALCOR_ASSERT(pMotionVector);
+//     if (!mpTemporalResamplingPass)
+//     {
+//         Program::Desc desc;
+//         desc.addShaderModules(mpScene->getShaderModules());
+//         desc.addShaderLibrary(kTemporalSamplingFIle).setShaderModel(kShaderModel).csEntry("main");
+//         desc.addTypeConformances(mpScene->getTypeConformances());
 //
-//        auto defines = mpScene->getSceneDefines();
-//        defines.add(mpSampleGenerator->getDefines());
-//        mpTemporalResamplingPass = ComputePass::create(mpDevice, desc, defines, true);
-//    }
-//    FALCOR_ASSERT(mpTemporalResamplingPass);
-//    auto var = mpTemporalResamplingPass->getRootVar();
+//         auto defines = mpScene->getSceneDefines();
+//         defines.add(mpSampleGenerator->getDefines());
+//         mpTemporalResamplingPass = ComputePass::create(mpDevice, desc, defines, true);
+//     }
+//     FALCOR_ASSERT(mpTemporalResamplingPass);
+//     auto var = mpTemporalResamplingPass->getRootVar();
 //
-//    if (!mpTemporalReservoirs)
-//    {
-//        uint32_t reservoirCounts = mFrameDim.x * mFrameDim.y;
-//        mpTemporalReservoirs = Buffer::createStructured(
-//            mpDevice.get(), var["gTemporalReservoirs"], reservoirCounts, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
-//            Buffer::CpuAccess::None, nullptr, false
-//        );
-//    }
-//    FALCOR_ASSERT(mpInitialSamples);
-//    var["initSamples"] = mpInitialSamples;
-//    var["gTemporalReservoirs"] = mpTemporalReservoirs;
-//    var["gMotionVector"] = pMotionVector;
-//    var["gNoise"] = pNoiseTexture;
+//     if (!mpTemporalReservoirs)
+//     {
+//         uint32_t reservoirCounts = mFrameDim.x * mFrameDim.y;
+//         mpTemporalReservoirs = Buffer::createStructured(
+//             mpDevice.get(), var["gTemporalReservoirs"], reservoirCounts, ResourceBindFlags::ShaderResource |
+//             ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+//         );
+//     }
+//     FALCOR_ASSERT(mpInitialSamples);
+//     var["initSamples"] = mpInitialSamples;
+//     var["gTemporalReservoirs"] = mpTemporalReservoirs;
+//     var["gMotionVector"] = pMotionVector;
+//     var["gNoise"] = pNoiseTexture;
 //
-//    var["CB"]["gFrameCount"] = mFrameCount;
-//    var["CB"]["gFrameDim"] = mFrameDim;
-//    var["CB"]["gNoiseTexDim"] = mNoiseDim;
+//     var["CB"]["gFrameCount"] = mFrameCount;
+//     var["CB"]["gFrameDim"] = mFrameDim;
+//     var["CB"]["gNoiseTexDim"] = mNoiseDim;
 //
 //
-//    var["gScene"] = mpScene->getParameterBlock();
-//    mpSampleGenerator->setShaderData(var);
-//    mpTemporalResamplingPass->execute(pRenderContext, {mFrameDim, 1u});
-//}
+//     var["gScene"] = mpScene->getParameterBlock();
+//     mpSampleGenerator->setShaderData(var);
+//     mpTemporalResamplingPass->execute(pRenderContext, {mFrameDim, 1u});
+// }
 
 void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pNoiseTexture)
 {
@@ -297,10 +296,9 @@ void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const Render
         desc.addShaderModules(mpScene->getShaderModules());
         desc.addShaderLibrary(kSpatialSamplingFile).setShaderModel(kShaderModel).csEntry("main");
         desc.addTypeConformances(mpScene->getTypeConformances());
-
         auto defines = mpScene->getSceneDefines();
+        FALCOR_ASSERT(mpSampleGenerator);
         defines.add(mpSampleGenerator->getDefines());
-
         mpSpatialResamplingPass = ComputePass::create(mpDevice, desc, defines, true);
     }
 
