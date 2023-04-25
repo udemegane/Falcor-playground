@@ -2,26 +2,15 @@
 #include "Utils/Math/MathConstants.slangh"
 
 import Scene.Scene;
-import Scene.HitInfo;
-import Scene.RaytracingInline;
 import Utils.Geometry.GeometryHelpers;
 
 import Utils.Math.MathHelpers;
 
 import Utils.Sampling.SampleGenerator;
 
-import Utils.Debug.PixelDebug;
-
-import Rendering.Utils.PixelStats;
-
+import RaytracingUtils;
 import GIReservoir;
 import StaticParams;
-// static const bool kUseTemporalResampling = true;
-// static const bool kUseSpatialResampling = true;
-// static const uint kSpatialNeigborsNum = 20;
-// static const uint kSampleRadius = 150;
-// static const uint kSpatialMax = 500;
-// static const bool kDoVisibilityTestEverySample = false;
 
 RWStructuredBuffer<GIReservoir> gTemporalReservoirs;
 RWStructuredBuffer<GIReservoir> gIntermediateReservoirs;
@@ -33,13 +22,6 @@ cbuffer CB
     uint gFrameCount;
     uint2 gFrameDim;
     uint2 gNoiseTexDim;
-}
-
-bool traceVisibilityRay(const Ray ray)
-{
-    logTraceRay(PixelStatsRayType::Visibility);
-    SceneRayQuery<true> srq;
-    return srq.traceVisibilityRay(ray, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff);
 }
 
 void spatialResampling(uint2 pixel)
@@ -78,9 +60,6 @@ void spatialResampling(uint2 pixel)
                 float norm2_current = dot(s2v, s2v);
                 float norm2_neighbor = dot(s2vNeighbor, s2vNeighbor);
                 float invJ = abs((cos_current * norm2_neighbor + HLF_EPSILON) / (cos_neighbor * norm2_current + HLF_EPSILON));
-                // master.update(rn.s,, sampleNext1D(sg));
-                // master.update(rn.s, length(rn.s.Lo) * rn.s.invPdf * invJ, sampleNext1D(sg));
-                // master.updated = master.updated || master.merge(rn, length(rn.ps) * invJ, sampleNext1D(sg));
 
                 // temporalならgetInvPdfしないとだめ
                 float weight = kUseTemporalResampling ? rn.getInvPDF() : 1.f;

@@ -8,6 +8,8 @@ target_sources(ReSTIRGIPass PRIVATE
     SpatialResampling.cs.slang
     FinalShading.cs.slang
     GIReservoir.slang
+    StaticParams.slang
+    RaytracingUtils.slang
 )
 
 target_copy_shaders(ReSTIRGIPass RenderPasses/ReSTIRGIPass)

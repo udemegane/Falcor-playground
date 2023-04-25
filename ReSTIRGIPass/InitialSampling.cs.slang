@@ -3,9 +3,6 @@
 import Scene.Scene;
 import Scene.Shading;
 import Scene.Material.ShadingUtils;
-import Scene.HitInfo;
-import Scene.HitInfoType;
-import Scene.RaytracingInline;
 import Utils.Math.MathHelpers;
 import Utils.Geometry.GeometryHelpers;
 import Utils.Sampling.SampleGenerator;
@@ -15,27 +12,9 @@ import Rendering.Lights.EmissiveLightSampler;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
 import Rendering.Lights.LightHelpers;
 
-import Utils.Debug.PixelDebug;
-
-import Rendering.Utils.PixelStats;
-
+import RaytracingUtils;
 import GIReservoir;
 import StaticParams;
-// あとでマジックナンバーやめる
-// static const float prr = 0.7f;
-// static const float invPrr = 1.0 / prr;
-// static const float prrSecondry = 0.20f;
-// static const float invPrrSecondry = 1.0 / prrSecondry;
-// static const bool kUseImportanceSampling = true;
-// static const uint kMaxBounces = 10;
-// static const bool kUseEnvLight = true;
-// static const bool kUseEmissiveLights = true;
-// static const bool kUseAnalyticLights = true;
-
-// // Temporal Resampling
-// static const bool kUseTemporalResampling = USE_TEMPORAL_RESAMPLING;
-// static const uint kTemporalMax = 10;
-// static const bool kUseInfinitBounce = true;
 
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float3> gNormal;
@@ -299,32 +278,6 @@ bool generateLightSample(
     {
         return false;
     }
-}
-
-/**
-    \param[in] ray
-    \param[out] hit
-    \param[out] hitT
-    \return True if ray get a hit.
-*/
-
-bool traceRayInline(const Ray ray, inout HitInfo hit, inout float hitT)
-{
-    logTraceRay(PixelStatsRayType::ClosestHit);
-    SceneRayQuery<true> srq;
-    return srq.traceRay(ray, hit, hitT, RAY_FLAG_NONE, 0xff);
-}
-
-/**
-    \param[in] ray
-    \return True if ray get a hit.
- */
-
-bool traceVisibilityRay(const Ray ray)
-{
-    logTraceRay(PixelStatsRayType::Visibility);
-    SceneRayQuery<true> srq;
-    return srq.traceVisibilityRay(ray, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff);
 }
 
 /** TODO: add support env light and mesh light.
