@@ -107,11 +107,11 @@ struct LightSampler
     }
 }
 
-uint2 getPrevPixel(float3 pos, Camera camera)
+int2 getPrevPixel(float3 pos, Camera camera)
 {
     float4 prevClip = mul(camera.data.prevViewProjMatNoJitter, float4(pos, 1.0));
     float2 prevUV = float2((prevClip.x / prevClip.w) * 0.5 + 0.5, (-prevClip.y / prevClip.w) * 0.5 + 0.5);
-    uint2 prevPix = uint2(prevUV.x * gFrameDim.x, prevUV.y * gFrameDim.y);
+    int2 prevPix = int2(prevUV.x * gFrameDim.x, prevUV.y * gFrameDim.y);
     return prevPix;
 }
 
@@ -622,8 +622,8 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
 void temporalResampling(const uint2 pixel, const float3 pos, const GISample s, inout SampleGenerator sg)
 {
     // temporal reservoirsの初期化をお願いマッスル
-    uint2 prevPix = getPrevPixel(pos, gScene.camera);
-    int2 prevPixelPos = (int2)prevPix; // + int2(gFrameDim * gMotionVector[pixel].xy);
+    int2 prevPix = getPrevPixel(pos, gScene.camera);
+    int2 prevPixelPos = prevPix; // + int2(gFrameDim * gMotionVector[pixel].xy);
     int prevFramePix1D = prevPixelPos.x + (int)gFrameDim.x * prevPixelPos.y;
     GIReservoir currentReservoir = GIReservoir();
     currentReservoir.update(s, length(s.Lo) * s.invPdf, sampleNext1D(sg));
