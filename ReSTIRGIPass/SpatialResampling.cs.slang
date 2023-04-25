@@ -74,10 +74,10 @@ void spatialResampling(uint2 pixel)
                 float cos_neighbor = dot(rn.s.ns, normalize(s2vNeighbor));
                 float norm2_current = dot(s2v, s2v);
                 float norm2_neighbor = dot(s2vNeighbor, s2vNeighbor);
-                float invJ = abs((cos_neighbor * norm2_current) / (cos_current * norm2_neighbor));
+                float invJ = abs((cos_current * norm2_neighbor) / (cos_neighbor * norm2_current));
                 // master.update(rn.s,, sampleNext1D(sg));
                 // master.update(rn.s, length(rn.s.Lo) * rn.s.invPdf * invJ, sampleNext1D(sg));
-                master.updated = master.updated || master.merge(rn, length(rn.ps) * invJ * length(rn.s.weight), sampleNext1D(sg));
+                master.updated = master.updated || master.merge(rn, length(rn.ps) * invJ, sampleNext1D(sg));
 
                 // float weight = 0.f;
                 // Ray ray = Ray(origin, -s2v, 0.f, length(s2v));
