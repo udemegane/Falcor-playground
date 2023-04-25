@@ -15,10 +15,12 @@ import Utils.Debug.PixelDebug;
 import Rendering.Utils.PixelStats;
 
 import GIReservoir;
+static const bool kUseTemporalResampling = true;
 static const bool kUseSpatialResampling = true;
-static const uint kSpatialNeigborsNum = 10;
+static const uint kSpatialNeigborsNum = 20;
 static const uint kSampleRadius = 150;
-static const uint kSpatialMax = 250;
+static const uint kSpatialMax = 500;
+static const bool kDoVisibilityTestEverySample = false;
 
 RWStructuredBuffer<GIReservoir> gTemporalReservoirs;
 RWStructuredBuffer<GIReservoir> gIntermediateReservoirs;
@@ -68,6 +70,7 @@ void spatialResampling(uint2 pixel)
             // angle test
             if (dot(rn.s.nv, s.nv) >= 0.5)
             {
+                // calc jacobian
                 float3 s2v = s.xv - rn.s.xs;
                 float3 s2vNeighbor = rn.s.xv - rn.s.xs;
                 float cos_current = dot(rn.s.ns, normalize(s2v));
@@ -79,12 +82,18 @@ void spatialResampling(uint2 pixel)
                 // master.update(rn.s, length(rn.s.Lo) * rn.s.invPdf * invJ, sampleNext1D(sg));
                 // master.updated = master.updated || master.merge(rn, length(rn.ps) * invJ, sampleNext1D(sg));
 
-                float weight = 0.f;
-                Ray ray = Ray(origin, -s2v, 0.f, length(s2v));
                 // temporalならgetInvPdfしないとだめ
-                if (traceVisibilityRay(ray))
-                    // master.updated = master.updated || master.update(rn.s, length(rn.s.Lo) * rn.s.invPdf * invJ, sampleNext1D(sg));
-                    master.updated = master.updated || master.merge(rn, length(rn.ps) * invJ * rn.getInvPDF(), sampleNext1D(sg));
+                float weight = kUseTemporalResampling ? rn.getInvPDF() : 1.f;
+
+                if (kDoVisibilityTestEverySample)
+                {
+                    Ray ray = Ray(origin, -s2v, 0.f, length(s2v));
+                    if (traceVisibilityRay(ray))
+                        // master.updated = master.updated || master.update(rn.s, length(rn.s.Lo) * rn.s.invPdf * invJ, sampleNext1D(sg));
+                        master.updated = master.updated || master.merge(rn, length(rn.ps) * invJ * weight, sampleNext1D(sg));
+                }
+                else
+                    master.updated = master.updated || master.merge(rn, length(rn.ps) * invJ * weight, sampleNext1D(sg));
             }
         }
         if (master.M > kSpatialMax)
@@ -92,14 +101,19 @@ void spatialResampling(uint2 pixel)
             master.wSum *= float(kSpatialMax) / master.M;
             master.M = kSpatialMax;
         }
-        gSpatialReservoirs[pixel1D] = master;
-
-        // const float3 dir = master.s.xs - s.xv;
-        // Ray ray = Ray(origin, dir, 0.f, length(dir));
-        // if (traceVisibilityRay(ray))
-        //     gSpatialReservoirs[pixel1D] = master;
-        // else
-        //     gSpatialReservoirs[pixel1D] = gIntermediateReservoirs[pixel1D];
+        if (kDoVisibilityTestEverySample)
+        {
+            gSpatialReservoirs[pixel1D] = master;
+        }
+        else
+        {
+            const float3 dir = master.s.xs - s.xv;
+            Ray ray = Ray(origin, dir, 0.f, length(dir));
+            if (traceVisibilityRay(ray))
+                gSpatialReservoirs[pixel1D] = master;
+            else
+                gSpatialReservoirs[pixel1D] = gIntermediateReservoirs[pixel1D];
+        }
 
         return;
     }
