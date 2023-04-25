@@ -87,10 +87,22 @@ struct LightSampler
     }
 }
 
+float4
+getRandomF4(uint2 pixel, uint id)
+{
+    uint x = (gFrameCount + pixel.x + id) % 1024;
+    uint y = ((gFrameCount + pixel.y + id) / 1024) % 1024;
+    id++;
+    return gNoise[uint2(x, y)];
+}
+
 int2 getPrevPixel(float3 pos, Camera camera)
 {
     float4 prevClip = mul(camera.data.prevViewProjMatNoJitter, float4(pos, 1.0));
-    float2 prevUV = float2((prevClip.x / prevClip.w) * 0.5 + 0.5, (-prevClip.y / prevClip.w) * 0.5 + 0.5);
+    float2 prevUV = float2(
+        ((prevClip.x + HLF_EPSILON) / (prevClip.w + HLF_EPSILON)) * 0.5 + 0.5,
+        ((-prevClip.y + HLF_EPSILON) / (prevClip.w + HLF_EPSILON)) * 0.5 + 0.5
+    );
     int2 prevPix = int2(prevUV.x * gFrameDim.x, prevUV.y * gFrameDim.y);
     return prevPix;
 }
@@ -574,12 +586,15 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
 
 void temporalResampling(const uint2 pixel, const float3 pos, const GISample s, inout SampleGenerator sg)
 {
+    float4 u4 = getRandomF4(pixel, 800);
+
     // temporal reservoirsの初期化をお願いマッスル
     int2 prevPix = getPrevPixel(pos, gScene.camera);
-    int2 prevPixelPos = prevPix; // + int2(gFrameDim * gMotionVector[pixel].xy);
-    int prevFramePix1D = prevPixelPos.x + (int)gFrameDim.x * prevPixelPos.y;
+    // int2 prevPixelPos = prevPix; // + int2(gFrameDim * gMotionVector[pixel].xy);
+    int prevFramePix1D = prevPix.x + (int)gFrameDim.x * prevPix.y;
     GIReservoir currentReservoir = GIReservoir();
-    currentReservoir.update(s, length(s.Lo) * s.invPdf, sampleNext1D(sg));
+    updateReservoir(currentReservoir, s, length(s.Lo) * s.invPdf, u4.x);
+    // currentReservoir.update(s, length(s.Lo) * s.invPdf, sampleNext1D(sg));
 
     if (kUseTemporalResampling)
     {
@@ -588,12 +603,10 @@ void temporalResampling(const uint2 pixel, const float3 pos, const GISample s, i
             GIReservoir res = gTemporalReservoirs[prevFramePix1D];
             if (res.dummy)
             {
-                bool accept = res.update(s, length(s.Lo) * s.invPdf, sampleNext1D(sg));
+                bool accept = updateReservoir(res, s, length(s.Lo) * s.invPdf, u4.y);
                 currentReservoir = res;
                 currentReservoir.updated = accept;
             }
-
-            // currentReservoir.updated = currentReservoir.merge(res, length(res.ps));
         }
         // TODO: clamp M
         if (currentReservoir.M > kTemporalMax)

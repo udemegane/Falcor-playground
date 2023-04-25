@@ -39,9 +39,14 @@ void spatialResampling(uint2 pixel)
         const float3 origin = computeRayOrigin(s.xv, s.nv);
 
         // master.update(s, length(s.Lo) * s.invPdf, sampleNext1D(sg));
+        uint x = (gFrameCount + pixel.x) % 1024;
+        uint y = ((gFrameCount + pixel.y) / 1024) % 1024;
+        float4 u4 = gNoise[uint2(x, y)];
+        // u4 = gNoise[uint2(x * (u4.x + u4.y), y * (u4.z + u4.w))];
+
         for (uint i = 0; i < kSpatialNeigborsNum; i++)
         {
-            float2 u2 = sampleNext2D(sg);
+            float2 u2 = u4.xy; // sampleNext2D(sg);
             float radius = kSampleRadius * u2.x;
             float angle = M_2PI * u2.y;
             uint2 neighbor = {
@@ -60,19 +65,18 @@ void spatialResampling(uint2 pixel)
                 float norm2_current = dot(s2v, s2v);
                 float norm2_neighbor = dot(s2vNeighbor, s2vNeighbor);
                 float invJ = abs((cos_current * norm2_neighbor + HLF_EPSILON) / (cos_neighbor * norm2_current + HLF_EPSILON));
-
                 // temporalならgetInvPdfしないとだめ
-                float weight = kUseTemporalResampling ? rn.getInvPDF() : 1.f;
+                float weight = kUseTemporalResampling ? getInvPDF(rn) : 1.f;
 
                 if (kDoVisibilityTestEverySample)
                 {
                     Ray ray = Ray(origin, -s2v, 0.f, length(s2v));
                     if (traceVisibilityRay(ray))
-                        // master.updated = master.updated || master.update(rn.s, length(rn.s.Lo) * rn.s.invPdf * invJ, sampleNext1D(sg));
-                        master.updated = master.updated || master.merge(rn, rn.ps * invJ * weight, sampleNext1D(sg));
+                        master.updated = master.updated || mergeReservoirs(master, rn, rn.ps * invJ * weight, sampleNext1D(sg));
                 }
+                // TODO: reservoir.merge() is super heavy, do optimize it.
                 else
-                    master.updated = master.updated || master.merge(rn, rn.ps * invJ * weight, sampleNext1D(sg));
+                    master.updated = master.updated || mergeReservoirs(master, rn, rn.ps * invJ * weight, u4.z);
             }
         }
         if (master.M > kSpatialMax)

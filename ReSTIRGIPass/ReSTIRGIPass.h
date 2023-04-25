@@ -129,6 +129,7 @@ private:
         // debug
         bool mEvalDirect=true;
         bool mShowVisibilityPointLi=false;
+        bool mSplitView=true;
     }mStaticParams;
 
 

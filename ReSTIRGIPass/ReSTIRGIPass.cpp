@@ -62,7 +62,7 @@ const std::string kDoVisibilityTestEachSamples = "doVisibilityTestEachSamples";
 
 const std::string kEvalDirectLighting = "evalDirectLighting";
 const std::string kShowVisibilityPointLi = "showVisibilityPointLi";
-
+const std::string kSplitView = "splitView";
 
 const Falcor::ChannelList kInputChannels = {
     {kInputVBuffer, "gVBuffer", "Visibility Buffer"},
@@ -116,6 +116,7 @@ Dictionary ReSTIRGIPass::getScriptingDictionary()
     d[kDoVisibilityTestEachSamples]=mStaticParams.mDoVisibilityTestEachSamples;
     d[kEvalDirectLighting]=mStaticParams.mEvalDirect;
     d[kShowVisibilityPointLi]=mStaticParams.mShowVisibilityPointLi;
+    d[kSplitView]=mStaticParams.mSplitView;
 
     return d;
 }
@@ -152,6 +153,8 @@ void ReSTIRGIPass::parseDictionary(const Dictionary& dict)
                 mStaticParams.mEvalDirect=v;
         }else if(k==kShowVisibilityPointLi){
                 mStaticParams.mShowVisibilityPointLi=v;
+        }else if(k==kSplitView){
+                mStaticParams.mSplitView=v;
         }
     }
 }
@@ -243,6 +246,7 @@ Program::DefineList ReSTIRGIPass::getStaticDefines()
 
     defines.add("EVAL_DIRECT", mStaticParams.mEvalDirect?"1":"0");
     defines.add("SHOW_VISIBILITY_POINT_LI", mStaticParams.mShowVisibilityPointLi?"1":"0");
+    defines.add("DEBUG_SPLIT_VIEW", mStaticParams.mSplitView?"1":"0");
     return defines;
 }
 
@@ -503,9 +507,12 @@ void ReSTIRGIPass::renderUI(Gui::Widgets& widget) {
         }
     }
     if(auto debugGroup=widget.group("Debug Property", true)){
+        dirty |= debugGroup.checkbox("Debug Split View", mStaticParams.mSplitView);
         dirty |= debugGroup.checkbox("Eval Direct Lighting", mStaticParams.mEvalDirect);
         if(!mStaticParams.mEvalDirect){
             dirty |= debugGroup.checkbox("Show Visibility point in-irradiance", mStaticParams.mShowVisibilityPointLi);
+        }else{
+            mStaticParams.mShowVisibilityPointLi=false;
         }
     }
     if(dirty){

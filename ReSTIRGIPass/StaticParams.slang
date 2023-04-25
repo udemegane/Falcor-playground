@@ -24,3 +24,4 @@ static const bool kDoVisibilityTestEverySample = DO_VISIBILITY_TEST_EACH_SAMPLES
 
 static const bool kEvalDirect = EVAL_DIRECT;
 static const bool kShowVisibilityPointLi = SHOW_VISIBILITY_POINT_LI;
+static const bool kDebugSplitView = DEBUG_SPLIT_VIEW;
