@@ -61,6 +61,8 @@ private:
     ReSTIRGIPass(std::shared_ptr<Device> pDevice, const Dictionary& dict);
     void parseDictionary(const Dictionary& dict);
 
+    Program::DefineList getStaticDefines();
+
     void initialSampling(
         RenderContext* pRenderContext,
         const RenderData& renderData,
@@ -99,11 +101,36 @@ private:
 
     bool mVarsChanged=true;
     bool mOptionChanged=false;
-    bool mUseReSTIR=true;
-    bool mUseReSTIRGI=true;
-    bool mTemporalReuse=true;
-    bool mSpatialReuse=true;
-    float mRussianRouletteProbability=0.25f;
+    struct {
+        //
+        float mSecondaryRayLaunchProbability=0.20f;
+        float mRussianRouletteProbability=0.6f;
+        bool mUseImportanceSampling=true;
+        uint mMaxBounces=15;
+        bool mUseInfiniteBounces=true;
+
+        bool mUseEnvLight=true;
+        bool mUseEmissiveLights=true;
+        bool mUseAnalyticsLights=true;
+        bool mEnableReSTIR=false;
+
+        // Temporal Resampling Settings
+        bool mTemporalResampling=true;
+        uint mTemporalReservoirSize=15;
+
+        // Spatial Resampling Settings
+        bool mSpatialResampling=true;
+        uint mSpatialNeighborsCount=20;
+        uint mSampleRadius=150;
+        uint mSpatialReservoirSize=500;
+        bool mDoVisibilityTestEachSamples=false;
+//        bool mUnbiased=false;
+
+        // debug
+        bool mEvalDirect=true;
+        bool mShowVisibilityPointLi=false;
+    }mStaticParams;
+
 
     uint2 mFrameDim = uint2(0, 0);
     uint2 mNoiseDim = uint2(0, 0);

@@ -20,21 +20,22 @@ import Utils.Debug.PixelDebug;
 import Rendering.Utils.PixelStats;
 
 import GIReservoir;
-
+import StaticParams;
 // あとでマジックナンバーやめる
-static const float prr = 0.7f;
-static const float invPrr = 1.0 / prr;
-static const float prrSecondry = 0.20f;
-static const float invPrrSecondry = 1.0 / prrSecondry;
-static const bool kUseImportanceSampling = true;
-static const uint kMaxBounces = 10;
-static const bool kUseEnvLight = true;
-static const bool kUseEmissiveLights = true;
-static const bool kUseAnalyticLights = true;
+// static const float prr = 0.7f;
+// static const float invPrr = 1.0 / prr;
+// static const float prrSecondry = 0.20f;
+// static const float invPrrSecondry = 1.0 / prrSecondry;
+// static const bool kUseImportanceSampling = true;
+// static const uint kMaxBounces = 10;
+// static const bool kUseEnvLight = true;
+// static const bool kUseEmissiveLights = true;
+// static const bool kUseAnalyticLights = true;
 
-static const bool kUseTemporalResampling = true;
-static const uint kTemporalMax = 10;
-static const bool kUseInfinitBounce = true;
+// // Temporal Resampling
+// static const bool kUseTemporalResampling = USE_TEMPORAL_RESAMPLING;
+// static const uint kTemporalMax = 10;
+// static const bool kUseInfinitBounce = true;
 
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float3> gNormal;
@@ -78,12 +79,12 @@ struct ScatterRayData
     }
 }
 
-enum class GenericLightType
-{
+enum class GenericLightType {
     EnvMap,
     Emissive,
     Analytic
 }
+
 struct LightSample
 {
     float3 Li;
@@ -174,8 +175,7 @@ bool selectLightType(out uint lightType, out float pdf, float rand)
         p[2] *= invSum;
     }
 
-    [unroll]
-    for (lightType = 0; lightType < 3; ++lightType)
+    [unroll] for (lightType = 0; lightType < 3; ++lightType)
     {
         if (rand < p[lightType])
         {
@@ -533,7 +533,7 @@ bool prepareInitialSampleRay(
         break;
     case InitialSamplePDFType::BSDF:
         BSDFSample result;
-        if (mi.sample(sd, rayData.sg, result, true))
+        if (mi.sample(sd, rayData.sg, result, kUseSpatialResampling))
         {
             if (isCurveHit)
                 rayData.origin = sd.posW - sd.curveRadius * sd.N;
@@ -630,7 +630,7 @@ void temporalResampling(const uint2 pixel, const float3 pos, const GISample s, i
 
     if (kUseTemporalResampling)
     {
-        if (prevFramePix1D >= 0 && prevFramePix1D < gFrameDim.x * gFrameDim.y)
+        if ((prevPix.x >= 0 && prevPix.y >= 0) && (prevPix.x < gFrameDim.x && prevPix.y < gFrameDim.y))
         {
             GIReservoir res = gTemporalReservoirs[prevFramePix1D];
             if (res.dummy)
@@ -696,8 +696,10 @@ void sampling(uint2 pixel, uint2 screen)
     }
 }
 
-[numthreads(16, 16, 1)]
-void main(uint3 groupId: SV_GroupID, uint3 groupThreadId: SV_GroupThreadID, uint3 dispatchThreadId: SV_DispatchThreadID)
+[numthreads(16, 16, 1)] void main(uint3 groupId
+                                  : SV_GroupID, uint3 groupThreadId
+                                  : SV_GroupThreadID, uint3 dispatchThreadId
+                                  : SV_DispatchThreadID)
 {
     uint2 pixel = dispatchThreadId.xy;
     if (any(pixel >= gFrameDim))

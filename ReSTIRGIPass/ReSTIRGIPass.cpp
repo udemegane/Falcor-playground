@@ -45,6 +45,25 @@ const std::string kInputDepth = "depth";
 const std::string kInputNormal = "normal";
 const std::string kInputNoise = "noiseTex";
 
+const std::string kSecondaryRayLaunchProbability= "secondaryRayLaunchProbability";
+const std::string kRussianRouletteProbability = "russianRouletteProbability";
+const std::string kUseImportanceSampling = "useImportanceSampling";
+const std::string kUseInfiniteBounces = "useInfiniteBounces";
+const std::string kMaxBounce = "maxBounce";
+
+const std::string kUseTemporalResampling = "useTemporalResampling";
+const std::string kTemporalReservoirSize = "temporalReservoirSize";
+
+const std::string kUseSpatialResampling = "useSpatialResampling";
+const std::string kSpatialReservoirSize = "spatialReservoirSize";
+const std::string kSpatialResamplingRadius = "spatialResamplingRadius";
+const std::string kSpatialNeighborsCount = "spatialNeighborsCount";
+const std::string kDoVisibilityTestEachSamples = "doVisibilityTestEachSamples";
+
+const std::string kEvalDirectLighting = "evalDirectLighting";
+const std::string kShowVisibilityPointLi = "showVisibilityPointLi";
+
+
 const Falcor::ChannelList kInputChannels = {
     {kInputVBuffer, "gVBuffer", "Visibility Buffer"},
     {kInputMotionVector, "gMotionVector", "Motion Vector"},
@@ -83,7 +102,21 @@ ReSTIRGIPass::SharedPtr ReSTIRGIPass::create(std::shared_ptr<Device> pDevice, co
 Dictionary ReSTIRGIPass::getScriptingDictionary()
 {
     Dictionary d;
-    // TODO: create dictionary members for options
+    d[kSecondaryRayLaunchProbability]=mStaticParams.mSecondaryRayLaunchProbability;
+    d[kRussianRouletteProbability]=mStaticParams.mRussianRouletteProbability;
+    d[kUseImportanceSampling]=mStaticParams.mUseImportanceSampling;
+    d[kUseInfiniteBounces]=mStaticParams.mUseInfiniteBounces;
+    d[kMaxBounce]=mStaticParams.mMaxBounces;
+    d[kUseTemporalResampling]=mStaticParams.mTemporalResampling;
+    d[kTemporalReservoirSize]=mStaticParams.mTemporalReservoirSize;
+    d[kUseSpatialResampling]=mStaticParams.mSpatialResampling;
+    d[kSpatialReservoirSize]=mStaticParams.mSpatialReservoirSize;
+    d[kSpatialResamplingRadius]=mStaticParams.mSampleRadius;
+    d[kSpatialNeighborsCount]=mStaticParams.mSpatialNeighborsCount;
+    d[kDoVisibilityTestEachSamples]=mStaticParams.mDoVisibilityTestEachSamples;
+    d[kEvalDirectLighting]=mStaticParams.mEvalDirect;
+    d[kShowVisibilityPointLi]=mStaticParams.mShowVisibilityPointLi;
+
     return d;
 }
 
@@ -91,7 +124,35 @@ void ReSTIRGIPass::parseDictionary(const Dictionary& dict)
 {
     for (const auto& [k, v] : dict)
     {
-        // TODO: assign options
+        if(k==kSecondaryRayLaunchProbability){
+            mStaticParams.mSecondaryRayLaunchProbability=v;
+        }else if(k==kRussianRouletteProbability){
+            mStaticParams.mRussianRouletteProbability=v;
+        }else if(k==kUseImportanceSampling){
+            mStaticParams.mUseImportanceSampling=v;
+        }else if(k==kUseInfiniteBounces){
+            mStaticParams.mUseInfiniteBounces=v;
+        }else if(k==kMaxBounce){
+            mStaticParams.mMaxBounces=v;
+        }else if(k==kUseTemporalResampling){
+                mStaticParams.mTemporalResampling=v;
+        }else if(k==kTemporalReservoirSize){
+                mStaticParams.mTemporalReservoirSize=v;
+        }else if(k==kUseSpatialResampling){
+                mStaticParams.mSpatialResampling=v;
+        }else if(k==kSpatialReservoirSize){
+                mStaticParams.mSpatialReservoirSize=v;
+        }else if(k==kSpatialResamplingRadius){
+                mStaticParams.mSampleRadius=v;
+        }else if(k==kSpatialNeighborsCount){
+                mStaticParams.mSpatialNeighborsCount=v;
+        }else if(k==kDoVisibilityTestEachSamples){
+                mStaticParams.mDoVisibilityTestEachSamples=v;
+        }else if(k==kEvalDirectLighting){
+                mStaticParams.mEvalDirect=v;
+        }else if(k==kShowVisibilityPointLi){
+                mStaticParams.mShowVisibilityPointLi=v;
+        }
     }
 }
 
@@ -159,6 +220,32 @@ void ReSTIRGIPass::execute(RenderContext* pRenderContext, const RenderData& rend
     // auto& pTexture = renderData.getTexture("src");
 }
 
+Program::DefineList ReSTIRGIPass::getStaticDefines()
+{
+    Program::DefineList defines;
+    defines.add("P_RR", std::to_string(mStaticParams.mRussianRouletteProbability));
+    defines.add("P_SECONDARY_RR", std::to_string(mStaticParams.mSecondaryRayLaunchProbability));
+    defines.add("USE_IMPORTANCE_SAMPLING",mStaticParams.mUseImportanceSampling?"1":"0");
+    defines.add("USE_ENVLIGHT", mStaticParams.mUseEnvLight?"1":"0");
+    defines.add("USE_EMISSIVE_LIGHTS", mStaticParams.mUseEmissiveLights?"1":"0");
+    defines.add("USE_ANALYTIC_LIGHTS",mStaticParams.mUseAnalyticsLights?"1":"0");
+    defines.add("USE_INFINITE_BOUNCES", mStaticParams.mUseInfiniteBounces?"1":"0");
+    defines.add("MAX_BOUNCES", std::to_string(mStaticParams.mMaxBounces));
+
+    defines.add("USE_TEMPORAL_RESAMPLING", mStaticParams.mTemporalResampling?"1":"0");
+    defines.add("TEMPORAL_RESERVOIR_SIZE", std::to_string(mStaticParams.mTemporalReservoirSize));
+    defines.add("USE_SPATIAL_RESAMPLING", mStaticParams.mSpatialResampling?"1":"0");
+//    defines.add("USE_MIS", mStaticParams.mUseMIS?"1":"0");
+    defines.add("SPATIAL_NEIGHBORHOOD_COUNTS", std::to_string(mStaticParams.mSpatialNeighborsCount));
+    defines.add("SPATIAL_RESAMPLING_RADIUS", std::to_string(mStaticParams.mSampleRadius));
+    defines.add("SPATIAL_RESERVOIR_SIZE", std::to_string(mStaticParams.mSpatialReservoirSize));
+    defines.add("DO_VISIBILITY_TEST_EACH_SAMPLES", mStaticParams.mDoVisibilityTestEachSamples?"1":"0");
+
+    defines.add("EVAL_DIRECT", mStaticParams.mEvalDirect?"1":"0");
+    defines.add("SHOW_VISIBILITY_POINT_LI", mStaticParams.mShowVisibilityPointLi?"1":"0");
+    return defines;
+}
+
 void ReSTIRGIPass::initialSampling(
     RenderContext* pRenderContext,
     const RenderData& renderData,
@@ -181,10 +268,14 @@ void ReSTIRGIPass::initialSampling(
         auto defines = mpScene->getSceneDefines();
         FALCOR_ASSERT(mpSampleGenerator);
         defines.add(mpSampleGenerator->getDefines());
+        defines.add(getStaticDefines());
 
         mpInitialSamplingPass = ComputePass::create(mpDevice, desc, defines, true);
     }
     FALCOR_ASSERT(mpInitialSamplingPass);
+    mpInitialSamplingPass->getProgram()->addDefines(getStaticDefines());
+//    mpInitialSamplingPass->getProgram()->addDefine("USE_TEMPORAL_RESAMPLING","1");
+//    mpInitialSamplingPass->getProgram()->addDefine("USE_INFINITE_BOUNCES","1");
 
     auto var = mpInitialSamplingPass->getRootVar();
 
@@ -299,10 +390,12 @@ void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const Render
         auto defines = mpScene->getSceneDefines();
         FALCOR_ASSERT(mpSampleGenerator);
         defines.add(mpSampleGenerator->getDefines());
+        defines.add(getStaticDefines());
         mpSpatialResamplingPass = ComputePass::create(mpDevice, desc, defines, true);
     }
 
     FALCOR_ASSERT(mpSpatialResamplingPass);
+    mpSpatialResamplingPass->getProgram()->addDefines(getStaticDefines());
     auto var = mpSpatialResamplingPass->getRootVar();
 
     if (!mpSpatialReservoirs)
@@ -347,12 +440,14 @@ void ReSTIRGIPass::finalShading(RenderContext* pRenderContext, const RenderData&
         desc.addShaderModules(mpScene->getShaderModules());
         desc.addShaderLibrary(kFinalShadingFile).setShaderModel(kShaderModel).csEntry("main");
         auto defines = mpScene->getSceneDefines();
-        // defines.add()
+        defines.add(getStaticDefines());
         defines.add(getValidResourceDefines(kOutputChannels, renderData));
+
         mpFinalShadingPass = ComputePass::create(mpDevice, desc, defines, true);
     }
 
     mpFinalShadingPass->getProgram()->addDefines(getValidResourceDefines(kOutputChannels, renderData));
+    mpFinalShadingPass->getProgram()->addDefines(getStaticDefines());
     auto var = mpFinalShadingPass->getRootVar();
     FALCOR_ASSERT(mpSpatialReservoirs);
 
@@ -382,4 +477,39 @@ void ReSTIRGIPass::endFrame()
     mFrameCount++;
 }
 
-void ReSTIRGIPass::renderUI(Gui::Widgets& widget) {}
+void ReSTIRGIPass::renderUI(Gui::Widgets& widget) {
+    bool dirty = false;
+    dirty |= widget.checkbox("Enable ReSTIR", mStaticParams.mEnableReSTIR);
+    dirty |= widget.var("Secondary Ray Probability", mStaticParams.mSecondaryRayLaunchProbability, 0.f, 1.f);
+    dirty |= widget.var("Russian Roulette Probability", mStaticParams.mRussianRouletteProbability, 0.f, 1.f);
+    dirty |= widget.checkbox("Use Infinite Bounces", mStaticParams.mUseInfiniteBounces);
+    if(mStaticParams.mUseInfiniteBounces)
+        dirty |= widget.var("Max Bounces", mStaticParams.mMaxBounces,0u,30u);
+
+    if(Gui::Group temporalGroup = widget.group("Temporal Resampling",true)){
+        dirty |= temporalGroup.checkbox("Use Temporal Resampling", mStaticParams.mTemporalResampling);
+        if(mStaticParams.mTemporalResampling){
+            dirty |= temporalGroup.var("Reservoir Size", mStaticParams.mTemporalReservoirSize, 1u, 50u);
+        }
+
+    }
+    if(auto spatialGroup = widget.group("Spatial Resampling", true)){
+        dirty |= spatialGroup.checkbox("Use Spatial Resampling", mStaticParams.mSpatialResampling);
+        if(mStaticParams.mSpatialResampling){
+            dirty |= spatialGroup.var("Neighbors Count", mStaticParams.mSpatialNeighborsCount,1u,50u);
+            dirty |= spatialGroup.var("Sample Radius", mStaticParams.mSampleRadius, 1u, 500u);
+            dirty |= spatialGroup.var("Reservoir Size", mStaticParams.mSpatialReservoirSize, 1u, 500u);
+            dirty |= spatialGroup.checkbox("Do Visibility-test each Sample", mStaticParams.mDoVisibilityTestEachSamples);
+        }
+    }
+    if(auto debugGroup=widget.group("Debug Property", true)){
+        dirty |= debugGroup.checkbox("Eval Direct Lighting", mStaticParams.mEvalDirect);
+        if(!mStaticParams.mEvalDirect){
+            dirty |= debugGroup.checkbox("Show Visibility point in-irradiance", mStaticParams.mShowVisibilityPointLi);
+        }
+    }
+    if(dirty){
+        mOptionsChanged=true;
+    }
+}
+
