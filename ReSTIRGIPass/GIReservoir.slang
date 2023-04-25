@@ -1,3 +1,4 @@
+#include "Utils/Math/MathConstants.slangh"
 struct GISample
 {
     float3 xv;
@@ -26,7 +27,7 @@ struct GIReservoir
     uint M;
     bool dummy;
     bool updated;
-    float3 ps; // Pdf(Sample)
+    float ps; // Pdf(Sample)
     __init()
     {
         dummy = true;
@@ -36,30 +37,27 @@ struct GIReservoir
         ps = 0.f;
     }
 
-    [mutating]
-    bool update(const GISample si, const float wi, const float u)
+    [mutating] bool update(const GISample si, const float wi, const float u)
     {
         wSum += wi;
-        bool accept = u <= wi / wSum;
+        bool accept = u <= (wi + HLF_EPSILON) / (wSum + HLF_EPSILON);
         if (accept || M == 0)
         {
             s = si;
-            ps = si.Lo * si.invPdf;
+            ps = length(si.Lo) * si.invPdf;
         }
         M++;
         return accept;
     }
 
-    [mutating]
-    bool merge(GIReservoir ri, float p, float u)
+        [mutating] bool merge(GIReservoir ri, float p, float u)
     {
         uint tempM = M;
-        float fixedW = ri.wSum * (p * ri.s.invPdf / length(ps));
+        float fixedW = ri.wSum * ((p * ri.s.invPdf + HLF_EPSILON) / (ps + HLF_EPSILON));
         bool accept = update(ri.s, fixedW, u);
         M = tempM + ri.M;
         return accept;
     }
 
-    float getInvPDF() { return wSum / (M * length(ps)); }
+    float getInvPDF() { return (wSum + HLF_EPSILON) / (M * ps + HLF_EPSILON); }
 }
-

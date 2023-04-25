@@ -32,6 +32,7 @@ float3 finalShading(uint2 pixel)
     uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
     // return gThroughput[pixel] * gFinalReservoirs[pixel1D].s.Lo; //* gFinalReservoirs[pixel1D].getInvPDF();
     let res = gFinalReservoirs[pixel1D];
+    // return (res.wSum + 0.0000000001) / (res.ps + 0.0000000001);
     // float accept = res.updated;
     // return accept;
 
