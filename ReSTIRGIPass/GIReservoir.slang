@@ -44,7 +44,7 @@ struct GIReservoir
         if (accept || M == 0)
         {
             s = si;
-            ps = si.Lo;
+            ps = si.Lo * si.invPdf;
         }
         M++;
         return accept;
@@ -54,12 +54,12 @@ struct GIReservoir
     bool merge(GIReservoir ri, float p, float u)
     {
         uint tempM = M;
-        float fixedW = ri.wSum * (p / length(ps));
+        float fixedW = ri.wSum * (p * ri.s.invPdf / length(ps));
         bool accept = update(ri.s, fixedW, u);
         M = tempM + ri.M;
         return accept;
     }
 
-    float getInvPDF() { return wSum / (M * length(ps) * s.invPdf); }
+    float getInvPDF() { return wSum / (M * length(ps)); }
 }
 
