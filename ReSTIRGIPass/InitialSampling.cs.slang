@@ -573,7 +573,7 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
     float invPdf = 0.f;
 
     // terminatedの処理が怪しい
-    prepareInitialSampleRay(InitialSamplePDFType::Uniform, sd, isCurveHit, mi, rayData, invPdf);
+    prepareInitialSampleRay(InitialSamplePDFType::BSDF, sd, isCurveHit, mi, rayData, invPdf);
 
     // Launch ray.
     Ray ray = Ray(rayData.origin, rayData.direction, 0.f, FLT_MAX);
@@ -664,7 +664,7 @@ void sampling(uint2 pixel, uint2 screen)
     // float3 randVec = gNoise[noiseSeed].xyz;
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
     float3 color = float3(0.f);
-    const bool computeDirect = false;
+    const bool computeDirect = true;
 
     float3 primaryRayDir = gScene.camera.computeRayPinhole(pixel, screen, false).dir;
     float3 primaryRayOrigin = gScene.camera.getPosition();
@@ -685,10 +685,10 @@ void sampling(uint2 pixel, uint2 screen)
         }
 
         GISample sample = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg);
-        GISample dummy = GISample();
-        dummy.Lo = color;
-        gInitSamples[pixel.x + screen.x * pixel.y] = sample;
+
         temporalResampling(pixel, sd.posW, sample, sg);
+        sample.ns = color;
+        gInitSamples[pixel.x + screen.x * pixel.y] = sample;
     }
     else
     {

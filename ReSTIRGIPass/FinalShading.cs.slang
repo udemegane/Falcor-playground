@@ -34,7 +34,7 @@ float3 finalShading(uint2 pixel)
     // return accept;
 
     float3 estimated = pixel.x < gFrameDim.x / 2 ? res.s.Lo * res.getInvPDF() : gInitSamples[pixel1D].Lo;
-    // estimated += gInitSamples[pixel1D].Lo;
+    estimated += gInitSamples[pixel1D].ns;
     // return estimated;
     return pixel.x < gFrameDim.x / 2 ? estimated * res.s.weight : estimated * gInitSamples[pixel1D].weight;
     // return res.s.Lo * gThroughput[pixel];
