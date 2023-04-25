@@ -31,6 +31,7 @@ static const uint kMaxBounces = 10;
 static const bool kUseEnvLight = true;
 static const bool kUseEmissiveLights = true;
 static const bool kUseAnalyticLights = true;
+
 static const bool kUseTemporalResampling = true;
 static const uint kTemporalMax = 10;
 static const bool kUseInfinitBounce = true;
@@ -663,7 +664,7 @@ void sampling(uint2 pixel, uint2 screen)
     // float3 randVec = gNoise[noiseSeed].xyz;
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
     float3 color = float3(0.f);
-    const bool computeDirect = true;
+    const bool computeDirect = false;
 
     float3 primaryRayDir = gScene.camera.computeRayPinhole(pixel, screen, false).dir;
     float3 primaryRayOrigin = gScene.camera.getPosition();
@@ -686,7 +687,7 @@ void sampling(uint2 pixel, uint2 screen)
         GISample sample = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg);
         GISample dummy = GISample();
         dummy.Lo = color;
-        gInitSamples[pixel.x + screen.x * pixel.y] = dummy;
+        gInitSamples[pixel.x + screen.x * pixel.y] = sample;
         temporalResampling(pixel, sd.posW, sample, sg);
     }
     else

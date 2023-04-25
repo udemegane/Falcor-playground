@@ -30,12 +30,13 @@ float3 finalShading(uint2 pixel)
     uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
     // return gThroughput[pixel] * gFinalReservoirs[pixel1D].s.Lo; //* gFinalReservoirs[pixel1D].getInvPDF();
     let res = gFinalReservoirs[pixel1D];
-    float accept = res.updated;
+    // float accept = res.updated;
     // return accept;
 
-    float3 estimated = pixel.x < gFrameDim.x / 1 ? res.s.Lo * res.getInvPDF() : gInitSamples[pixel1D].Lo;
-    estimated += gInitSamples[pixel1D].Lo;
-    return pixel.x < gFrameDim.x / 1 ? estimated * res.s.weight : estimated * gInitSamples[pixel1D].weight;
+    float3 estimated = pixel.x < gFrameDim.x / 2 ? res.s.Lo * res.getInvPDF() : gInitSamples[pixel1D].Lo;
+    // estimated += gInitSamples[pixel1D].Lo;
+    // return estimated;
+    return pixel.x < gFrameDim.x / 2 ? estimated * res.s.weight : estimated * gInitSamples[pixel1D].weight;
     // return res.s.Lo * gThroughput[pixel];
 
     // return gInitSamples[pixel1D].Lo * gThroughput[pixel];

@@ -15,10 +15,10 @@ import Utils.Debug.PixelDebug;
 import Rendering.Utils.PixelStats;
 
 import GIReservoir;
-static const bool kUseSpatialResampling = false;
-static const uint kSpatialNeigborsNum = 15;
-static const uint kSampleRadius = 15;
-static const uint kSpatialMax = 300;
+static const bool kUseSpatialResampling = true;
+static const uint kSpatialNeigborsNum = 20;
+static const uint kSampleRadius = 80;
+static const uint kSpatialMax = 500;
 
 RWStructuredBuffer<GIReservoir> gTemporalReservoirs;
 RWStructuredBuffer<GIReservoir> gIntermediateReservoirs;
@@ -51,7 +51,9 @@ void spatialResampling(uint2 pixel)
         // TODO:
         GIReservoir master = gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y];
         GISample s = gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y].s;
-        master.update(s, length(s.Lo) * s.invPdf, sampleNext1D(sg));
+        const float3 origin = computeRayOrigin(s.xv, s.nv);
+
+        // master.update(s, length(s.Lo) * s.invPdf, sampleNext1D(sg));
         for (uint i = 0; i < kSpatialNeigborsNum; i++)
         {
             float2 u2 = sampleNext2D(sg);
@@ -70,12 +72,19 @@ void spatialResampling(uint2 pixel)
                 float3 s2vNeighbor = rn.s.xv - rn.s.xs;
                 float cos_current = dot(rn.s.ns, normalize(s2v));
                 float cos_neighbor = dot(rn.s.ns, normalize(s2vNeighbor));
-                float norm2_current = s2v.x * s2v.x + s2v.y * s2v.y + s2v.z * s2v.z;
-                float norm2_neighbor = s2vNeighbor.x * s2vNeighbor.x + s2vNeighbor.y * s2vNeighbor.y + s2vNeighbor.z * s2vNeighbor.z;
+                float norm2_current = dot(s2v, s2v);
+                float norm2_neighbor = dot(s2vNeighbor, s2vNeighbor);
                 float invJ = abs((cos_neighbor * norm2_current) / (cos_current * norm2_neighbor));
                 // master.update(rn.s,, sampleNext1D(sg));
-                master.update(rn.s, length(rn.s.Lo) * rn.s.invPdf * invJ, sampleNext1D(sg));
-                // master.updated = master.merge(rn, length(rn.ps) * invJ, sampleNext1D(sg));
+                // master.update(rn.s, length(rn.s.Lo) * rn.s.invPdf * invJ, sampleNext1D(sg));
+                master.updated = master.updated || master.merge(rn, length(rn.ps) * invJ * length(rn.s.weight), sampleNext1D(sg));
+
+                // float weight = 0.f;
+                // Ray ray = Ray(origin, -s2v, 0.f, length(s2v));
+                // if (traceVisibilityRay(ray))
+                //     master.updated = master.updated || master.merge(rn, length(rn.ps) * invJ * length(rn.s.weight), sampleNext1D(sg));
+
+                //                const float3 origin = computeRayOrigin();
             }
             if (master.M > kSpatialMax)
             {
@@ -83,8 +92,9 @@ void spatialResampling(uint2 pixel)
                 master.M = kSpatialMax;
             }
         }
-        const float3 origin = computeRayOrigin(master.s.xv, master.s.nv);
-        const float3 dir = master.s.xs - master.s.xv;
+        gSpatialReservoirs[pixel1D] = master;
+
+        const float3 dir = master.s.xs - s.xv;
         Ray ray = Ray(origin, dir, 0.f, length(dir));
         if (traceVisibilityRay(ray))
             gSpatialReservoirs[pixel1D] = master;
