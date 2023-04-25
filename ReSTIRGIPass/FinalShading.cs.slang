@@ -39,15 +39,18 @@ float3 finalShading(uint2 pixel)
     if (kDebugSplitView)
     {
         float3 estimated = pixel.x < gFrameDim.x / 2 ? res.s.Lo * getInvPDF(res) : gInitSamples[pixel1D].Lo;
-        if (kEvalDirect)
-            estimated += gInitSamples[pixel1D].ns;
+
         if (kShowVisibilityPointLi)
             return estimated;
-        return pixel.x < gFrameDim.x / 2 ? estimated * res.s.weight : estimated * gInitSamples[pixel1D].weight;
+        estimated += pixel.x < gFrameDim.x / 2 ? estimated * res.s.weight : estimated * gInitSamples[pixel1D].weight;
+        if (kEvalDirect)
+            return estimated + gInitSamples[pixel1D].ns;
+        else
+            return estimated;
     }
     else
     {
-        return res.s.Lo * getInvPDF(res) * res.s.weight;
+        return res.s.Lo * getInvPDF(res) * res.s.weight + gInitSamples[pixel1D].ns;
     }
 
     // return res.s.Lo * gThroughput[pixel];
