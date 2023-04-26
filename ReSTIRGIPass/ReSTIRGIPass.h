@@ -31,6 +31,7 @@
 #include "Rendering/Lights/LightBVHSampler.h"
 #include "Rendering/Lights/EmissivePowerSampler.h"
 #include "Rendering/Lights/EnvMapSampler.h"
+#include <random>
 
 using namespace Falcor;
 
@@ -67,17 +68,20 @@ private:
         RenderContext* pRenderContext,
         const RenderData& renderData,
         const Texture::SharedPtr& pVBuffer,
-        const Texture::SharedPtr& pNormal,
         const Texture::SharedPtr& pMotionVector,
         const Texture::SharedPtr& pNoiseTexture
     );
+
+    // Move temporal algorithm into initialSampling
 //    void temporalResampling(
 //        RenderContext* pRenderContext,
 //        const RenderData& renderData,
 //        const Texture::SharedPtr& pMotionVector,
 //        const Texture::SharedPtr& pNoiseTexture
 //    );
-    void spatialResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pNoiseTexture);
+
+    // Move spatial algorithm into FinalShading
+//    void spatialResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pNoiseTexture);
     void finalShading(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pNoiseTexture);
     void endFrame();
 
@@ -99,14 +103,16 @@ private:
     EnvMapSampler::SharedPtr mpEnvMapSampler;
     EmissiveLightSampler::SharedPtr mpEmissiveLightSampler;
 
+    std::mt19937 mEngine;
+
     bool mVarsChanged=true;
     bool mOptionChanged=false;
     struct {
         //
         float mSecondaryRayLaunchProbability=0.20f;
-        float mRussianRouletteProbability=0.6f;
+        float mRussianRouletteProbability=0.3f;
         bool mUseImportanceSampling=true;
-        uint mMaxBounces=15;
+        uint mMaxBounces=3;
         bool mUseInfiniteBounces=true;
 
         bool mUseEnvLight=true;
@@ -116,11 +122,11 @@ private:
 
         // Temporal Resampling Settings
         bool mTemporalResampling=true;
-        uint mTemporalReservoirSize=15;
+        uint mTemporalReservoirSize=20;
 
         // Spatial Resampling Settings
         bool mSpatialResampling=true;
-        uint mSpatialNeighborsCount=20;
+        uint mSpatialNeighborsCount=10;
         uint mSampleRadius=150;
         uint mSpatialReservoirSize=500;
         bool mDoVisibilityTestEachSamples=false;
@@ -129,7 +135,7 @@ private:
         // debug
         bool mEvalDirect=true;
         bool mShowVisibilityPointLi=false;
-        bool mSplitView=true;
+        bool mSplitView=false;
     }mStaticParams;
 
 

@@ -17,8 +17,8 @@ import GIReservoir;
 import StaticParams;
 
 Texture2D<PackedHitInfo> gVBuffer;
-Texture2D<float3> gNormal;
-Texture2D<float3> gPositionW;
+// Texture2D<float3> gNormal;
+// Texture2D<float3> gPositionW;
 Texture2D<float4> gNoise;
 Texture2D<float2> gMotionVector;
 
@@ -26,14 +26,17 @@ Texture2D<float2> gMotionVector;
 RWStructuredBuffer<GIReservoir> gTemporalReservoirs;
 RWStructuredBuffer<GIReservoir> gIntermediateReservoirs;
 
-RWStructuredBuffer<GISample> gInitSamples;
+// RWStructuredBuffer<GISample> gInitSamples;
 // RWTexture2D<float3> gThroughput;
+
+static const float kRayMax = 1e30f;
 
 cbuffer CB
 {
     uint gFrameCount;
     uint2 gFrameDim;
     uint2 gNoiseTexDim;
+    uint gRandUint;
 }
 
 struct ScatterRayData
@@ -43,6 +46,7 @@ struct ScatterRayData
     float3 throughput;
     float3 origin;
     float3 direction;
+    float sceneLength;
     uint length;
 
     SampleGenerator sg;
@@ -54,6 +58,7 @@ struct ScatterRayData
         this.throughput = float3(1.0f);
         this.origin = float3(0.f);
         this.direction = float3(0.f);
+        this.sceneLength = 0;
         this.sg = sg;
     }
 }
@@ -88,12 +93,12 @@ struct LightSampler
     }
 }
 
-float4 getRandomF4(uint2 pixel, uint id)
+float4 extractNoise(uint2 pixel, uint time, uint seed)
 {
-    uint x = (gFrameCount + pixel.x + id) % 1024;
-    uint y = ((gFrameCount + pixel.y + id) / 1024) % 1024;
-    id++;
-    return gNoise[uint2(x, y)];
+    uint x = ((seed % pixel.x) + pixel.x + time) % gNoiseTexDim.x;
+    uint y = ((seed % pixel.y) + pixel.y + time) % gNoiseTexDim.y;
+    float4 u4 = gNoise[uint2(x, y)];
+    return gNoise[uint2(gNoiseTexDim.x * u4.x, gNoiseTexDim.y * u4.y)];
 }
 
 int2 getPrevPixel(float3 pos, Camera camera)
@@ -378,8 +383,9 @@ bool prepareScatterRay(const ShadingData sd, const IMaterialInstance mi, const f
     \return Whether ray still alive(true) or killed(false).
 */
 
-bool handleHit(const HitInfo hit, inout ScatterRayData rayData)
+bool handleHit(const HitInfo hit, const float hitT, inout ScatterRayData rayData)
 {
+    rayData.sceneLength += hitT;
     let lod = ExplicitLodTextureSampler(0.f);
     ShadingData sd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
     let mi = gScene.materials.getMaterialInstance(sd, lod);
@@ -421,12 +427,12 @@ void pathTrace(inout ScatterRayData rayData)
 {
     for (uint depth = 0; depth <= kMaxBounces && !rayData.terminated; depth++)
     {
-        Ray ray = Ray(rayData.origin, rayData.direction, 0.f, FLT_MAX);
+        Ray ray = Ray(rayData.origin, rayData.direction, 0.f, kRayMax);
         HitInfo hit;
         float hitT;
         if (traceRayInline(ray, hit, hitT))
         {
-            handleHit(hit, rayData);
+            handleHit(hit, hitT, rayData);
             // Russian rourette
             if (sampleNext1D(rayData.sg) > prr)
                 break;
@@ -434,7 +440,7 @@ void pathTrace(inout ScatterRayData rayData)
         }
         else
         {
-            rayData.radiance += gScene.envMap.eval(rayData.direction);
+            // rayData.radiance += gScene.envMap.eval(rayData.direction);
             rayData.terminated = true;
         }
     }
@@ -477,10 +483,12 @@ bool prepareInitialSampleRay(
     {
     case InitialSamplePDFType::Uniform:
         float3 randomDir = sample_sphere(sampleNext2D(rayData.sg));
+        randomDir = normalize(randomDir);
 
         const uint lobeTypes = mi.getLobeTypes(sd);
         const bool hasReflection = lobeTypes & uint(LobeType::Reflection);
         const bool hasTransmission = lobeTypes & uint(LobeType::Transmission);
+        // xvInvPdf = 1.f / (mi.evalPdf(sd, randomDir, false) + HLF_EPSILON); //
         xvInvPdf = hasReflection && hasTransmission ? M_4PI : M_2PI;
         randomDir = (dot(randomDir, sd.N) < kMinCosTheta) && hasReflection && !hasTransmission ? -randomDir : randomDir;
         randomDir = hasTransmission && !hasReflection ? -randomDir : randomDir;
@@ -492,7 +500,11 @@ bool prepareInitialSampleRay(
         else
             rayData.origin = sd.computeNewRayOrigin();
         rayData.direction = randomDir;
-        rayData.throughput *= mi.eval(sd, randomDir, rayData.sg) * xvInvPdf * abs(dot(randomDir, max(sd.N, sd.faceN)));
+        // mi.getProperties(sd).
+        //  mi.
+        float woDotN = dot(randomDir, max(sd.N, sd.faceN));
+        woDotN = (hasTransmission ? woDotN : max(woDotN, 0.f));
+        rayData.throughput *= mi.eval(sd, randomDir, rayData.sg) * woDotN * xvInvPdf;
         break;
     case InitialSamplePDFType::CosineWeighted:
         // TODO implement this.
@@ -500,7 +512,7 @@ bool prepareInitialSampleRay(
         break;
     case InitialSamplePDFType::BSDF:
         BSDFSample result;
-        if (mi.sample(sd, rayData.sg, result, kUseSpatialResampling))
+        if (mi.sample(sd, rayData.sg, result, kUseImportanceSampling))
         {
             if (isCurveHit)
                 rayData.origin = sd.posW - sd.curveRadius * sd.N;
@@ -543,7 +555,7 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
     prepareInitialSampleRay(InitialSamplePDFType::BSDF, sd, isCurveHit, mi, rayData, invPdf);
 
     // Launch ray.
-    Ray ray = Ray(rayData.origin, rayData.direction, 0.f, FLT_MAX);
+    Ray ray = Ray(rayData.origin, rayData.direction, 0.f, kRayMax);
     HitInfo hit;
     float hitT;
 
@@ -553,7 +565,7 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
     if (traceRayInline(ray, hit, hitT))
     {
         // Compute Indirect radiance
-        bool validHit = handleHit(hit, rayData);
+        bool validHit = handleHit(hit, hitT, rayData);
         if (sampleNext1D(sg) <= prrSecondry && validHit && kUseInfinitBounce)
         {
             rayData.throughput *= invPrrSecondry;
@@ -572,13 +584,14 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
 
         sample.weight = weight;
         sample.invPdf = invPdf;
+        sample.sceneLength = rayData.sceneLength;
 
         return sample;
     }
     else
     {
         GISample sample = GISample();
-        sample.Lo = gScene.envMap.eval(rayData.direction);
+        // sample.Lo = gScene.envMap.eval(rayData.direction);
         return GISample();
     }
 }
@@ -590,29 +603,21 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
 
 void temporalResampling(const uint2 pixel, const float3 pos, const GISample s, inout SampleGenerator sg)
 {
-    float4 u4 = getRandomF4(pixel, 800);
+    float2 u4 = sampleNext2D(sg); // getRandomF4(pixel, 800);
 
-    // temporal reservoirsの初期化をお願いマッスル
     int2 prevPix = getPrevPixel(pos, gScene.camera);
     // int2 prevPixelPos = prevPix; // + int2(gFrameDim * gMotionVector[pixel].xy);
     int prevFramePix1D = prevPix.x + (int)gFrameDim.x * prevPix.y;
     GIReservoir currentReservoir = GIReservoir();
     updateReservoir(currentReservoir, s, length(s.Lo) * s.invPdf, u4.x);
-    // currentReservoir.update(s, length(s.Lo) * s.invPdf, sampleNext1D(sg));
 
-    if (kUseTemporalResampling)
+    if (kUseTemporalResampling && prevPix.x >= 0 && prevPix.y >= 0 && prevPix.x < gFrameDim.x && prevPix.y < gFrameDim.y)
     {
-        if ((prevPix.x >= 0 && prevPix.y >= 0) && (prevPix.x < gFrameDim.x && prevPix.y < gFrameDim.y))
-        {
-            GIReservoir res = gTemporalReservoirs[prevFramePix1D];
-            if (res.dummy)
-            {
-                bool accept = updateReservoir(res, s, length(s.Lo) * s.invPdf, u4.y);
-                currentReservoir = res;
-                currentReservoir.updated = accept;
-            }
-        }
-        // TODO: clamp M
+        GIReservoir res = gTemporalReservoirs[prevFramePix1D];
+        bool accept = updateReservoir(res, s, length(s.Lo) * s.invPdf, u4.y);
+        currentReservoir = res;
+        currentReservoir.updated = accept;
+
         if (currentReservoir.M > kTemporalMax)
         {
             currentReservoir.wSum *= (float)kTemporalMax / currentReservoir.M;
@@ -648,7 +653,7 @@ void sampling(uint2 pixel, uint2 screen)
 
         // compute Direct Lighting
         // TODO: replace ReSTIR
-        if (computeDirect)
+        if (kEvalDirect)
         {
             color += (mi.getProperties(sd).emission);
             color += evalDirectAnalytic(sd, mi, sg);
@@ -658,16 +663,18 @@ void sampling(uint2 pixel, uint2 screen)
 
         temporalResampling(pixel, sd.posW, sample, sg);
         sample.ns = color;
-        gInitSamples[pixel.x + screen.x * pixel.y] = sample;
+        // gInitSamples[pixel.x + screen.x * pixel.y] = sample;
     }
     else
     {
         GISample s = GISample();
-        s.ns = gScene.envMap.eval(primaryRayDir);
-        gInitSamples[pixel.x + screen.x * pixel.y] = s;
+        // s.ns = gScene.envMap.eval(primaryRayDir);
+        // gInitSamples[pixel.x + screen.x * pixel.y] = s;
         // color += float3(0.0f, 0.0, 0.f);
     }
 }
+
+// groupshared bool rr[256];
 
 [numthreads(16, 16, 1)]
 void main(uint3 groupId: SV_GroupID, uint3 groupThreadId: SV_GroupThreadID, uint3 dispatchThreadId: SV_DispatchThreadID)
