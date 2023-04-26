@@ -85,7 +85,7 @@ bool updateReservoir(inout GIReservoir r, const in GISample si, const float wi, 
 bool mergeReservoirs(inout GIReservoir r1, const in GIReservoir r2, const float p2, const float u)
 {
     uint M1 = r1.M;
-    float fixedW = r2.wSum * ((p2 * r2.s.invPdf + HLF_EPSILON) / (r1.ps + HLF_EPSILON));
+    float fixedW = r2.wSum * ((p2 + HLF_EPSILON) / (r1.ps + HLF_EPSILON));
     bool accept = updateReservoir(r1, r2.s, fixedW, u); // r1.update(r2.s, fixedW, u);
     r1.M = M1 + r2.M;
     return accept;

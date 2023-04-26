@@ -43,6 +43,11 @@ float4 extractNoise(uint2 pixel, uint seed, bool flag)
     return gNoise[uint2(gNoiseTexDim.x * u4.x, gNoiseTexDim.y * u4.y)];
 }
 
+float GetRandomNumber(float2 texCoord, int Seed)
+{
+    return frac(sin(dot(texCoord.xy, float2(12.9898, 78.233)) + Seed) * 43758.5453);
+}
+
 GIReservoir spatialResampling(uint2 pixel)
 {
     uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
@@ -51,14 +56,22 @@ GIReservoir spatialResampling(uint2 pixel)
     {
         GIReservoir master = gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y];
         GISample s = master.s;
-        float4 u4 = extractNoise(pixel, gRandUint, master.updated);
 
         const float3 origin = computeRayOrigin(s.xv, s.nv);
-
+        float2 texCoord = float2(pixel.x, pixel.y);
+        texCoord = normalize(texCoord);
+        float u = 1.0f;
         for (uint i = 0; i < kSpatialNeigborsNum; i++)
         {
-            float radius = kSampleRadius * u4.x;
-            float angle = M_2PI * u4.y;
+            // float4 u3 = extractNoise(pixel, uint(float(gRandUint) * u), master.updated);
+            // u = u3.w;
+            // float3 u4 = sampleNext3D(sg);
+            float3 u3 = float3(
+                GetRandomNumber(texCoord, gRandUint + pixel.x + pixel.y + i), GetRandomNumber(texCoord, gRandUint + pixel.x + i),
+                GetRandomNumber(texCoord, gRandUint + pixel.y + i)
+            );
+            float radius = kSampleRadius * u3.x;
+            float angle = M_2PI * u3.y;
             uint2 neighbor = {
                 clamp(pixel.x + uint(radius * cos(angle)), 0, gFrameDim.x), clamp(pixel.y + uint(radius * sin(angle)), 0, gFrameDim.y)
             };
@@ -82,11 +95,11 @@ GIReservoir spatialResampling(uint2 pixel)
                 {
                     Ray ray = Ray(origin, -s2v, 0.f, length(s2v));
                     if (traceVisibilityRay(ray))
-                        master.updated = master.updated || mergeReservoirs(master, rn, rn.ps * invJ * weight, u4.w);
+                        master.updated = master.updated || mergeReservoirs(master, rn, rn.ps * invJ, u3.z);
                 }
                 else
                 {
-                    master.updated = master.updated || mergeReservoirs(master, rn, rn.ps * invJ * weight, u4.z);
+                    master.updated = master.updated || mergeReservoirs(master, rn, rn.ps * invJ, u3.z);
                 }
             }
         }
