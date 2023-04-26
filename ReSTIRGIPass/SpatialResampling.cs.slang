@@ -50,7 +50,8 @@ void spatialResampling(uint2 pixel)
             float radius = kSampleRadius * u2.x;
             float angle = M_2PI * u2.y;
             uint2 neighbor = {
-                clamp(pixel.x + uint(radius * cos(angle)), 0, gFrameDim.x), clamp(pixel.y + uint(radius * sin(angle)), 0, gFrameDim.y)};
+                clamp(pixel.x + uint(radius * cos(angle)), 0, gFrameDim.x), clamp(pixel.y + uint(radius * sin(angle)), 0, gFrameDim.y)
+            };
 
             GIReservoir rn = gIntermediateReservoirs[neighbor.x + gFrameDim.x * neighbor.y];
             // depth test
@@ -108,10 +109,8 @@ void spatialResampling(uint2 pixel)
     return;
 }
 
-[numthreads(16, 16, 1)] void main(uint3 groupId
-                                  : SV_GroupID, uint3 groupThreadId
-                                  : SV_GroupThreadID, uint3 dispatchThreadId
-                                  : SV_DispatchThreadID)
+[numthreads(16, 16, 1)]
+void main(uint3 groupId: SV_GroupID, uint3 groupThreadId: SV_GroupThreadID, uint3 dispatchThreadId: SV_DispatchThreadID)
 {
     uint2 pixel = dispatchThreadId.xy;
     spatialResampling(pixel);

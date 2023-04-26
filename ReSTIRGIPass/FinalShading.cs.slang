@@ -58,10 +58,8 @@ float3 finalShading(uint2 pixel)
     // return gInitSamples[pixel1D].Lo * gThroughput[pixel];
 }
 
-[numthreads(16, 16, 1)] void main(uint3 groupId
-                                  : SV_GroupID, uint3 groupThreadId
-                                  : SV_GroupThreadID, uint3 dispatchThreadId
-                                  : SV_DispatchThreadID)
+[numthreads(16, 16, 1)]
+void main(uint3 groupId: SV_GroupID, uint3 groupThreadId: SV_GroupThreadID, uint3 dispatchThreadId: SV_DispatchThreadID)
 {
     uint2 pixel = dispatchThreadId.xy;
     gColor[pixel] = float4(finalShading(pixel), 1.0f);

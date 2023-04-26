@@ -58,7 +58,8 @@ struct ScatterRayData
     }
 }
 
-enum class GenericLightType {
+enum class GenericLightType
+{
     EnvMap,
     Emissive,
     Analytic
@@ -87,8 +88,7 @@ struct LightSampler
     }
 }
 
-float4
-getRandomF4(uint2 pixel, uint id)
+float4 getRandomF4(uint2 pixel, uint id)
 {
     uint x = (gFrameCount + pixel.x + id) % 1024;
     uint y = ((gFrameCount + pixel.y + id) / 1024) % 1024;
@@ -166,7 +166,8 @@ bool selectLightType(out uint lightType, out float pdf, float rand)
         p[2] *= invSum;
     }
 
-    [unroll] for (lightType = 0; lightType < 3; ++lightType)
+    [unroll]
+    for (lightType = 0; lightType < 3; ++lightType)
     {
         if (rand < p[lightType])
         {
@@ -433,6 +434,7 @@ void pathTrace(inout ScatterRayData rayData)
         }
         else
         {
+            rayData.radiance += gScene.envMap.eval(rayData.direction);
             rayData.terminated = true;
         }
     }
@@ -575,6 +577,8 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
     }
     else
     {
+        GISample sample = GISample();
+        sample.Lo = gScene.envMap.eval(rayData.direction);
         return GISample();
     }
 }
@@ -658,14 +662,15 @@ void sampling(uint2 pixel, uint2 screen)
     }
     else
     {
+        GISample s = GISample();
+        s.ns = gScene.envMap.eval(primaryRayDir);
+        gInitSamples[pixel.x + screen.x * pixel.y] = s;
         // color += float3(0.0f, 0.0, 0.f);
     }
 }
 
-[numthreads(16, 16, 1)] void main(uint3 groupId
-                                  : SV_GroupID, uint3 groupThreadId
-                                  : SV_GroupThreadID, uint3 dispatchThreadId
-                                  : SV_DispatchThreadID)
+[numthreads(16, 16, 1)]
+void main(uint3 groupId: SV_GroupID, uint3 groupThreadId: SV_GroupThreadID, uint3 dispatchThreadId: SV_DispatchThreadID)
 {
     uint2 pixel = dispatchThreadId.xy;
     if (any(pixel >= gFrameDim))
