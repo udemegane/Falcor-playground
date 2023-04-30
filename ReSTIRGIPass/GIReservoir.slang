@@ -17,10 +17,10 @@ struct GISample
         xs = float3(0.f);
         ns = float3(0.f);
         Lo = float3(0.f);
-        weight = float3(0.f);
-        debug = float3(0.f);
+        weight = float3(1.f);
+        invPdf = 1.f;
         sceneLength = 0.f;
-        invPdf = 0.f;
+        debug = float3(0.f);
     }
 }
 
@@ -29,12 +29,10 @@ struct GIReservoir
     GISample s;
     float wSum;
     uint M;
-    bool dummy;
     bool updated;
     float ps; // Pdf(Sample)
     __init()
     {
-        dummy = true;
         wSum = 0.f;
         M = 0;
         updated = false;

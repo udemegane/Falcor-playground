@@ -129,6 +129,11 @@ GIReservoir spatialResampling(uint2 pixel, inout SampleGenerator sg)
             Ray ray = Ray(origin, dir, 0.f, length(dir));
             if (traceVisibilityRay(ray))
             {
+                // updateReservoir(
+                //     gIntermediateReservoirs[pixel1D], master.s, length(master.s.Lo) * master.s.invPdf * getInvPDF(master),
+                //     sampleNext1D(sg)
+                // );
+
                 return master;
             }
             else

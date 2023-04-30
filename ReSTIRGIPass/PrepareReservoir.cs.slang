@@ -354,7 +354,13 @@ float3 evalDirectAnalytic(const ShadingData sd, const IMaterialInstance mi, inou
     \return True if the sample is valid.
 */
 
-bool prepareScatterRay(const ShadingData sd, const IMaterialInstance mi, const float3 rayOrigin, inout ScatterRayData rayData, )
+bool prepareScatterRay(
+    const ShadingData sd,
+    const IMaterialInstance mi,
+    const float3 rayOrigin,
+    inout ScatterRayData rayData,
+    inout float invPdf
+)
 {
     BSDFSample bsdfSample;
     if (mi.sample(sd, rayData.sg, bsdfSample, kUseImportanceSampling))
@@ -366,7 +372,7 @@ bool prepareScatterRay(const ShadingData sd, const IMaterialInstance mi, const f
         }
         rayData.direction = bsdfSample.wo;
         rayData.throughput *= bsdfSample.weight;
-
+        invPdf = 1.0f / (bsdfSample.pdf + HLF_EPSILON);
         return any(rayData.throughput > 0.f);
     }
     else
@@ -404,7 +410,8 @@ bool handleHit(const HitInfo hit, const float hitT, inout ScatterRayData rayData
 
     // add length
     float3 rayOrigin = hit.getType() == HitType::Curve ? sd.posW - sd.curveRadius * sd.N : sd.computeNewRayOrigin();
-    prepareScatterRay(sd, mi, rayOrigin, rayData);
+    float invPdf;
+    prepareScatterRay(sd, mi, rayOrigin, rayData, invPdf);
     if (!rayData.terminated)
     {
         rayData.length++;
@@ -424,6 +431,8 @@ bool handleHit(const HitInfo hit, const float hitT, inout ScatterRayData rayData
 
 void pathTrace(inout ScatterRayData rayData)
 {
+    bool fetchSample = true;
+    GISample sample = GISample();
     for (uint depth = 0; depth <= kMaxBounces && !rayData.terminated; depth++)
     {
         Ray ray = Ray(rayData.origin, rayData.direction, 0.f, kRayMax);
@@ -433,6 +442,10 @@ void pathTrace(inout ScatterRayData rayData)
         {
             if (handleHit(hit, hitT, rayData))
             {
+                if (fetchSample)
+                {
+                    fetchSample = false;
+                }
                 // Russian rourette
                 if (sampleNext1D(rayData.sg) > prr)
                     break;
@@ -445,6 +458,7 @@ void pathTrace(inout ScatterRayData rayData)
         {
             // rayData.radiance += gScene.envMap.eval(rayData.direction);
             rayData.terminated = true;
+            break;
         }
     }
 }
@@ -524,9 +538,8 @@ bool prepareInitialSampleRay(
             else
                 rayData.origin = sd.computeNewRayOrigin();
             rayData.direction = result.wo;
-            result.weight;
             // float3 weight = (mi.eval(sd, result.wo, rayData.sg) + HLF_EPSILON) / (mi.evalPdf(sd, result.wo, true) + HLF_EPSILON);
-            // rayData.throughput *= weight; // result.weight;
+            // rayData.throughput *= weight;
             rayData.throughput *= result.weight;
             xvInvPdf = 1.0f / (result.pdf + HLF_EPSILON);
             return any(rayData.throughput > 0.f);
@@ -549,15 +562,19 @@ bool prepareInitialSampleRay(
     \return GISample
 */
 
-GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi, const bool isCurveHit, inout SampleGenerator sg, )
+GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi, const bool isCurveHit, inout ScatterRayData rayData)
 {
     BSDFSample result;
 
     // Prepare secondary ray.
-    ScatterRayData rayData = ScatterRayData(sg);
     float invPdf;
     // Only BSDF Sampling is correct yet.
-    prepareInitialSampleRay(InitialSamplePDFType::BSDF, sd, isCurveHit, mi, rayData, invPdf);
+    // prepareInitialSampleRay(InitialSamplePDFType::BSDF, sd, isCurveHit, mi, rayData, invPdf);
+
+    // float3 secondaryRayOrigin = isCurveHit ? sd.posW - sd.curveRadius * sd.N : sd.computeNewRayOrigin();
+    // prepareScatterRay(sd, mi, secondaryRayOrigin, rayData, invPdf);
+
+    prepareScatterRay(sd, mi, computeRayOrigin(sd.posW, max(sd.N, sd.faceN)), rayData, invPdf);
 
     // Prepare and Launch ray.
     Ray ray = Ray(rayData.origin, rayData.direction, 0.f, kRayMax);
@@ -565,30 +582,51 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
     float hitT;
     // Init ray throughput weight for spatial resampling.
     const float3 weight = rayData.throughput;
-    rayData.throughput = float3(1.0f);
+    // const float3 weight = float3(1.0f);
+    // rayData.throughput = float3(1.0f);
     if (traceRayInline(ray, hit, hitT))
     {
         // Compute Indirect radiance
-        bool validHit = handleHit(hit, hitT, rayData);
-        // Fetch sampling points data
+        rayData.sceneLength += hitT;
         let lod = ExplicitLodTextureSampler(0.f);
-        ShadingData sampledSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
+        ShadingData samplePointSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
+        let SamplePointMi = gScene.materials.getMaterialInstance(samplePointSd, lod);
+        rayData.radiance += rayData.throughput * (evalDirectAnalytic(samplePointSd, SamplePointMi, rayData.sg) +
+                                                  SamplePointMi.getProperties(samplePointSd).emission);
+        float3 rayOrigin = hit.getType() == HitType::Curve
+                               ? samplePointSd.posW - samplePointSd.curveRadius * samplePointSd.N
+                               : samplePointSd.computeNewRayOrigin(!(mi.getLobeTypes(samplePointSd) & (uint)LobeType::Transmission));
+        float xsInvPdf;
+        bool validHit = prepareScatterRay(samplePointSd, SamplePointMi, rayOrigin, rayData, xsInvPdf);
+        rayData.length += rayData.terminated ? 1u : 0u;
+        // ----
+        // bool validHit = handleHit(hit, hitT, rayData);
+        // // Fetch sampling points data
+        // let lod = ExplicitLodTextureSampler(0.f);
+        // ShadingData sampledSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
 
-        // Compute Multi-bounce indirect lighting
-        if (sampleNext1D(sg) <= prrSecondry && validHit && kUseInfinitBounce)
+        // // Compute Multi-bounce indirect lighting
+        // ScatterRayData multiBounceRay = ScatterRayData(rayData.sg);
+        // prepareScatterRay(
+        //     sampledSd, gScene.materials.getMaterialInstance(sd, lod), computeRayOrigin(sampledSd.posW, max(sampledSd.N,
+        //     sampledSd.faceN)), multiBounceRay
+        // );
+
+        if (sampleNext1D(rayData.sg) <= prrSecondry && validHit && kUseInfinitBounce)
         {
             rayData.throughput *= invPrrSecondry;
+            // rayData.throughput *= invPrrSecondry;
             pathTrace(rayData);
         }
 
         // Set sample.
         GISample sample = GISample();
-        sample.Lo = rayData.radiance;
+        sample.Lo = rayData.radiance / (weight + HLF_EPSILON);
         sample.xv = sd.posW;
         sample.nv = max(sd.N, sd.faceN);
 
-        sample.xs = sampledSd.posW;
-        sample.ns = max(sampledSd.N, sampledSd.faceN);
+        sample.xs = samplePointSd.posW;
+        sample.ns = max(samplePointSd.N, samplePointSd.faceN);
 
         sample.weight = weight;
         sample.invPdf = invPdf;
@@ -683,11 +721,27 @@ void sampling(uint2 pixel, uint2 screen)
             color += evalDirectAnalytic(sd, mi, sg);
         }
 
-        GISample sample = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg);
-
-        temporalResampling(pixel, computeRayOrigin(sd.posW, -sd.faceN), sample, sg);
-        sample.ns = color;
-        // gInitSamples[pixel.x + screen.x * pixel.y] = sample;
+        if (kUseReferencePathTracer)
+        {
+            // Reference PathTracer
+            ScatterRayData rayData = ScatterRayData(sg);
+            float invPdf;
+            prepareScatterRay(sd, mi, computeRayOrigin(sd.posW, max(sd.N, sd.faceN)), rayData, invPdf);
+            pathTrace(rayData);
+            GISample sample = GISample();
+            sample.Lo = rayData.radiance;
+            GIReservoir r = GIReservoir();
+            r.s = sample;
+            gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y] = r;
+        }
+        else
+        {
+            // Generate sample
+            ScatterRayData rayData = ScatterRayData(sg);
+            GISample sample = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, rayData);
+            // Temporal Resampling
+            temporalResampling(pixel, computeRayOrigin(sd.posW, -sd.faceN), sample, sg);
+        }
     }
     else
     {
