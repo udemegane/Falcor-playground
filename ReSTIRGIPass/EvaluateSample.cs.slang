@@ -11,7 +11,9 @@ import Utils.Sampling.SampleGenerator;
 import RaytracingUtils;
 import GIReservoir;
 import StaticParams;
+import LoadShadingData;
 
+Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float4> gNoise;
 Texture2D<float4> gDirectLighting;
 
@@ -43,12 +45,14 @@ float4 extractNoise(uint2 pixel, uint seed, bool flag)
     return gNoise[uint2(gNoiseTexDim.x * u4.x, gNoiseTexDim.y * u4.y)];
 }
 
-float GetRandomNumber(float2 texCoord, int Seed)
+float GetRandomNumber(float2 texCoord, uint2 pixel, int Seed)
 {
-    return frac(sin(dot(texCoord.xy, float2(12.9898, 78.233)) + Seed) * 43758.5453);
+    bool swap = ((pixel.x + pixel.y) % 2 == 0);
+
+    return frac(sin(dot(texCoord.xy, float2(12.9898, 78.233)) + Seed + Seed % (swap ? pixel.x : pixel.y)) * 43758.5453);
 }
 
-GIReservoir spatialResampling(uint2 pixel)
+GIReservoir spatialResampling(uint2 pixel, inout SampleGenerator sg)
 {
     uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
 
@@ -66,12 +70,12 @@ GIReservoir spatialResampling(uint2 pixel)
             // float4 u3 = extractNoise(pixel, uint(float(gRandUint) * u), master.updated);
             // u = u3.w;
             // float3 u4 = sampleNext3D(sg);
-            float3 u3 = float3(
-                GetRandomNumber(texCoord, gRandUint + pixel.x + pixel.y + i), GetRandomNumber(texCoord, gRandUint + pixel.x + i),
-                GetRandomNumber(texCoord, gRandUint + pixel.y + i)
-            );
-            float radius = kSampleRadius * u3.x;
-            float angle = M_2PI * u3.y;
+            // float3 u3 = float3(
+            //     GetRandomNumber(texCoord, pixel, gRandUint + pixel.x + pixel.y + i),
+            //     GetRandomNumber(texCoord, pixel, gRandUint + pixel.x + i), GetRandomNumber(texCoord, pixel, gRandUint + pixel.y + i)
+            // );
+            float radius = kSampleRadius * sampleNext1D(sg);
+            float angle = M_2PI * sampleNext1D(sg);
             uint2 neighbor = {
                 clamp(pixel.x + uint(radius * cos(angle)), 0, gFrameDim.x), clamp(pixel.y + uint(radius * sin(angle)), 0, gFrameDim.y)
             };
@@ -90,16 +94,25 @@ GIReservoir spatialResampling(uint2 pixel)
                 float invJ = abs((cos_current * norm2_neighbor + HLF_EPSILON) / (cos_neighbor * norm2_current + HLF_EPSILON));
 
                 float weight = kUseTemporalResampling ? getInvPDF(rn) : 1.f;
+                float u = sampleNext1D(sg);
 
                 if (kDoVisibilityTestEverySample)
                 {
                     Ray ray = Ray(origin, -s2v, 0.f, length(s2v));
                     if (traceVisibilityRay(ray))
-                        master.updated = master.updated || mergeReservoirs(master, rn, rn.ps * invJ, u3.z);
+                    {
+                        bool accept = mergeReservoirs(master, rn, rn.ps * invJ, u);
+                        if (accept)
+                            setVisibilityPoint(master, s);
+                        master.updated = master.updated || accept;
+                    }
                 }
                 else
                 {
-                    master.updated = master.updated || mergeReservoirs(master, rn, rn.ps * invJ, u3.z);
+                    bool accept = mergeReservoirs(master, rn, rn.ps * invJ, u);
+                    if (accept)
+                        setVisibilityPoint(master, s);
+                    master.updated = master.updated || accept;
                 }
             }
         }
@@ -134,7 +147,7 @@ GIReservoir spatialResampling(uint2 pixel)
     }
 }
 
-float3 finalShading(uint2 pixel, GIReservoir res)
+float3 finalShading(uint2 pixel, GIReservoir res, inout SampleGenerator sg)
 {
     // TODO: implement this.
     // outColor = DirectLighting + sample.Lo*throughput
@@ -160,8 +173,30 @@ float3 finalShading(uint2 pixel, GIReservoir res)
     // }
     // else
     {
-        float3 color = res.s.Lo * getInvPDF(res) * res.s.weight;
+        float3 color = res.s.Lo * getInvPDF(res);
+        if (false)
+        {
+            const HitInfo hit = HitInfo(gVBuffer[pixel]);
+            if (hit.isValid())
+            {
+                let lod = ExplicitLodTextureSampler(0.f);
+                float3 primaryRayDir = gScene.camera.computeRayPinhole(pixel, gFrameDim, false).dir;
+                float3 primaryRayOrigin = gScene.camera.getPosition();
+                ShadingData sd = loadShadingData(hit, primaryRayDir, primaryRayOrigin, lod);
+                let mi = gScene.materials.getMaterialInstance(sd, lod);
+                float3 wo = (res.s.xs - res.s.xv);
+                res.s.weight =
+                    (mi.eval(sd, wo, sg) * getInvPDF(res) + HLF_EPSILON) / (mi.evalPdf(sd, wo, kUseImportanceSampling) + HLF_EPSILON);
+            }
+        }
+
+        color *= res.s.weight;
+
+        // color = float(res.updated);
+
+        // color = abs(res.s.invPdf); // getInvPDF(res);
         gDiffuseRadiance[pixel] = float4(color, res.s.sceneLength);
+
         return color; //+ (kEvalDirect ? gInitSamples[pixel1D].ns : float3(0.f));
     }
 
@@ -181,7 +216,13 @@ void main(
     uint2 pixel = dispatchThreadId.xy;
     if (any(pixel >= gFrameDim))
         return;
-    gColor[pixel] = float4(finalShading(pixel, spatialResampling(pixel)), 1.0f);
+    SampleGenerator sg = SampleGenerator(pixel, gRandUint);
+    // float3 hijack = gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y].s.debug;
+    float3 finalcolor = finalShading(pixel, spatialResampling(pixel, sg), sg);
+    gColor[pixel] = float4(finalcolor, 1.0f);
+    // gColor[pixel] = float4(pixel.y > gFrameDim.y / 2.0 ? hijack : finalcolor, 1.0f);
+
+    // gColor[pixel] = float4(hijack, 1.0f);
     // float3 tile = float3(float(groupThreadId.x) / 16.f, float(groupThreadId.y) / 16.f, 0.0);
     // gColor[pixel] = float4(tile, 1.0f);
 }

@@ -8,6 +8,7 @@ target_sources(ReSTIRGIPass PRIVATE
     GIReservoir.slang
     StaticParams.slang
     RaytracingUtils.slang
+    LoadShadingData.slang
 )
 
 target_copy_shaders(ReSTIRGIPass RenderPasses/ReSTIRGIPass)
