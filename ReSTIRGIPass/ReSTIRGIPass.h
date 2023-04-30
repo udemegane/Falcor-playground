@@ -68,21 +68,28 @@ private:
         RenderContext* pRenderContext,
         const RenderData& renderData,
         const Texture::SharedPtr& pVBuffer,
+        const Texture::SharedPtr& pDepth,
         const Texture::SharedPtr& pMotionVector,
         const Texture::SharedPtr& pNoiseTexture
     );
 
     // Move temporal algorithm into initialSampling
-//    void temporalResampling(
-//        RenderContext* pRenderContext,
-//        const RenderData& renderData,
-//        const Texture::SharedPtr& pMotionVector,
-//        const Texture::SharedPtr& pNoiseTexture
-//    );
+    //    void temporalResampling(
+    //        RenderContext* pRenderContext,
+    //        const RenderData& renderData,
+    //        const Texture::SharedPtr& pMotionVector,
+    //        const Texture::SharedPtr& pNoiseTexture
+    //    );
 
     // Move spatial algorithm into FinalShading
-//    void spatialResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pNoiseTexture);
-    void finalShading(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pNoiseTexture);
+    //    void spatialResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pNoiseTexture);
+    void finalShading(
+        RenderContext* pRenderContext,
+        const RenderData& renderData,
+        const Texture::SharedPtr& pVBuffer,
+        const Texture::SharedPtr& pDepth,
+        const Texture::SharedPtr& pNoiseTexture
+    );
     void endFrame();
 
     Scene::SharedPtr mpScene;
@@ -97,7 +104,7 @@ private:
     Buffer::SharedPtr mpIntermediateReservoirs;
     Buffer::SharedPtr mpSpatialReservoirs;
 
-//    Texture::SharedPtr mpPrimaryThroughput;
+    //    Texture::SharedPtr mpPrimaryThroughput;
 
     SampleGenerator::SharedPtr mpSampleGenerator;
     EnvMapSampler::SharedPtr mpEnvMapSampler;
@@ -105,39 +112,39 @@ private:
 
     std::mt19937 mEngine;
 
-    bool mVarsChanged=true;
-    bool mOptionChanged=false;
-    struct {
+    bool mVarsChanged = true;
+    bool mOptionChanged = false;
+    struct
+    {
         //
-        float mSecondaryRayLaunchProbability=0.20f;
-        float mRussianRouletteProbability=0.3f;
-        bool mUseImportanceSampling=true;
-        uint mMaxBounces=3;
-        bool mUseInfiniteBounces=true;
+        float mSecondaryRayLaunchProbability = 0.20f;
+        float mRussianRouletteProbability = 0.3f;
+        bool mUseImportanceSampling = true;
+        uint mMaxBounces = 3;
+        bool mUseInfiniteBounces = true;
 
-        bool mUseEnvLight=true;
-        bool mUseEmissiveLights=true;
-        bool mUseAnalyticsLights=true;
-        bool mEnableReSTIR=false;
+        bool mUseEnvLight = true;
+        bool mUseEmissiveLights = true;
+        bool mUseAnalyticsLights = true;
+        bool mEnableReSTIR = false;
 
         // Temporal Resampling Settings
-        bool mTemporalResampling=true;
-        uint mTemporalReservoirSize=20;
+        bool mTemporalResampling = true;
+        uint mTemporalReservoirSize = 20;
 
         // Spatial Resampling Settings
-        bool mSpatialResampling=true;
-        uint mSpatialNeighborsCount=10;
-        uint mSampleRadius=150;
-        uint mSpatialReservoirSize=500;
-        bool mDoVisibilityTestEachSamples=false;
-//        bool mUnbiased=false;
+        bool mSpatialResampling = true;
+        uint mSpatialNeighborsCount = 10;
+        uint mSampleRadius = 150;
+        uint mSpatialReservoirSize = 500;
+        bool mDoVisibilityTestEachSamples = false;
+        //        bool mUnbiased=false;
 
         // debug
-        bool mEvalDirect=true;
-        bool mShowVisibilityPointLi=false;
-        bool mSplitView=false;
-    }mStaticParams;
-
+        bool mEvalDirect = true;
+        bool mShowVisibilityPointLi = false;
+        bool mSplitView = false;
+    } mStaticParams;
 
     uint2 mFrameDim = uint2(0, 0);
     uint2 mNoiseDim = uint2(0, 0);

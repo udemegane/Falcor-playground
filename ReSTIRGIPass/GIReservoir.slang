@@ -9,6 +9,7 @@ struct GISample
     float3 weight;
     float invPdf;
     float sceneLength;
+    float3 debug;
     __init()
     {
         xv = float3(0.f);
@@ -17,6 +18,7 @@ struct GISample
         ns = float3(0.f);
         Lo = float3(0.f);
         weight = float3(0.f);
+        debug = float3(0.f);
         sceneLength = 0.f;
         invPdf = 0.f;
     }
@@ -66,7 +68,7 @@ struct GIReservoir
 
 float getInvPDF(const in GIReservoir r)
 {
-    return (r.wSum + HLF_EPSILON) / (r.M * r.ps + HLF_EPSILON);
+    return (r.wSum + DBL_EPSILON) / (r.M * r.ps + DBL_EPSILON);
 }
 
 bool updateReservoir(inout GIReservoir r, const in GISample si, const float wi, const float u)
@@ -85,8 +87,16 @@ bool updateReservoir(inout GIReservoir r, const in GISample si, const float wi, 
 bool mergeReservoirs(inout GIReservoir r1, const in GIReservoir r2, const float p2, const float u)
 {
     uint M1 = r1.M;
-    float fixedW = r2.wSum * ((p2 + HLF_EPSILON) / (r1.ps + HLF_EPSILON));
+    float fixedW = r2.wSum * (p2 + HLF_EPSILON) / (r1.ps + HLF_EPSILON);
     bool accept = updateReservoir(r1, r2.s, fixedW, u); // r1.update(r2.s, fixedW, u);
     r1.M = M1 + r2.M;
     return accept;
+}
+
+void setVisibilityPoint(inout GIReservoir r, const GISample dst)
+{
+    r.s.xv = dst.xv;
+    r.s.nv = dst.nv;
+    // r.s.weight = dst.weight;
+    // r.s.invPdf = dst.invPdf;
 }

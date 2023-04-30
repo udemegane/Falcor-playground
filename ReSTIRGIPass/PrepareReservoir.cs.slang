@@ -1,8 +1,8 @@
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 import Scene.Scene;
-import Scene.Shading;
-import Scene.Material.ShadingUtils;
+// import Scene.Shading;
+// import Scene.Material.ShadingUtils;
 import Utils.Math.MathHelpers;
 import Utils.Geometry.GeometryHelpers;
 import Utils.Sampling.SampleGenerator;
@@ -15,8 +15,10 @@ import Rendering.Lights.LightHelpers;
 import RaytracingUtils;
 import GIReservoir;
 import StaticParams;
+import LoadShadingData;
 
 Texture2D<PackedHitInfo> gVBuffer;
+Texture2D<float> gDepth;
 // Texture2D<float3> gNormal;
 // Texture2D<float3> gPositionW;
 Texture2D<float4> gNoise;
@@ -104,55 +106,52 @@ float4 extractNoise(uint2 pixel, uint time, uint seed)
 int2 getPrevPixel(float3 pos, Camera camera)
 {
     float4 prevClip = mul(camera.data.prevViewProjMatNoJitter, float4(pos, 1.0));
-    float2 prevUV = float2(
-        ((prevClip.x + HLF_EPSILON) / (prevClip.w + HLF_EPSILON)) * 0.5 + 0.5,
-        ((-prevClip.y + HLF_EPSILON) / (prevClip.w + HLF_EPSILON)) * 0.5 + 0.5
-    );
-    int2 prevPix = int2(prevUV.x * gFrameDim.x, prevUV.y * gFrameDim.y);
+    float2 prevUV = float2(((prevClip.x) / (prevClip.w)) * 0.5 + 0.5, ((-prevClip.y) / (prevClip.w)) * 0.5 + 0.5);
+    int2 prevPix = int2(prevUV.x * (float)gFrameDim.x, prevUV.y * (float)gFrameDim.y);
     return prevPix;
 }
 
-ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const float3 rayDir, const ITextureSampler lod)
-{
-    VertexData v = {};
-    uint materialID = {};
+// ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const float3 rayDir, const ITextureSampler lod)
+// {
+//     VertexData v = {};
+//     uint materialID = {};
 
-#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_TRIANGLE_MESH)
-    if (hit.getType() == HitType::Triangle)
-    {
-        const TriangleHit triangleHit = hit.getTriangleHit();
-        v = gScene.getVertexData(triangleHit);
-        materialID = gScene.getMaterialID(triangleHit.instanceID);
-    }
-#endif
-#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_DISPLACED_TRIANGLE_MESH)
-    if (hit.getType() == HitType::DisplacedTriangle)
-    {
-        const DisplacedTriangleHit displacedTriangleHit = hit.getDisplacedTriangleHit();
-        v = gScene.getVertexData(displacedTriangleHit, -rayDir);
-        materialID = gScene.getMaterialID(displacedTriangleHit.instanceID);
-    }
-#endif
-#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_CURVE)
-    if (hit.getType() == HitType::Curve)
-    {
-        const CurveHit curveHit = hit.getCurveHit();
-        v = gScene.getVertexDataFromCurve(curveHit);
-        materialID = gScene.getMaterialID(curveHit.instanceID);
-    }
-#endif
-#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_SDF_GRID)
-    if (hit.getType() == HitType::SDFGrid)
-    {
-        const SDFGridHit sdfGridHit = hit.getSDFGridHit();
-        v = gScene.getVertexDataFromSDFGrid(sdfGridHit, rayOrigin, rayDir);
-        materialID = gScene.getMaterialID(sdfGridHit.instanceID);
-    }
-#endif
-    ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -rayDir, lod);
+// #if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_TRIANGLE_MESH)
+//     if (hit.getType() == HitType::Triangle)
+//     {
+//         const TriangleHit triangleHit = hit.getTriangleHit();
+//         v = gScene.getVertexData(triangleHit);
+//         materialID = gScene.getMaterialID(triangleHit.instanceID);
+//     }
+// #endif
+// #if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_DISPLACED_TRIANGLE_MESH)
+//     if (hit.getType() == HitType::DisplacedTriangle)
+//     {
+//         const DisplacedTriangleHit displacedTriangleHit = hit.getDisplacedTriangleHit();
+//         v = gScene.getVertexData(displacedTriangleHit, -rayDir);
+//         materialID = gScene.getMaterialID(displacedTriangleHit.instanceID);
+//     }
+// #endif
+// #if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_CURVE)
+//     if (hit.getType() == HitType::Curve)
+//     {
+//         const CurveHit curveHit = hit.getCurveHit();
+//         v = gScene.getVertexDataFromCurve(curveHit);
+//         materialID = gScene.getMaterialID(curveHit.instanceID);
+//     }
+// #endif
+// #if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_SDF_GRID)
+//     if (hit.getType() == HitType::SDFGrid)
+//     {
+//         const SDFGridHit sdfGridHit = hit.getSDFGridHit();
+//         v = gScene.getVertexDataFromSDFGrid(sdfGridHit, rayOrigin, rayDir);
+//         materialID = gScene.getMaterialID(sdfGridHit.instanceID);
+//     }
+// #endif
+//     ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -rayDir, lod);
 
-    return sd;
-}
+//     return sd;
+// }
 
 bool selectLightType(out uint lightType, out float pdf, float rand)
 {
@@ -521,8 +520,11 @@ bool prepareInitialSampleRay(
             else
                 rayData.origin = sd.computeNewRayOrigin();
             rayData.direction = result.wo;
+            result.weight;
+            // float3 weight = (mi.eval(sd, result.wo, rayData.sg) + HLF_EPSILON) / (mi.evalPdf(sd, result.wo, true) + HLF_EPSILON);
+            // rayData.throughput *= weight; // result.weight;
             rayData.throughput *= result.weight;
-            xvInvPdf = 1.0f / result.pdf;
+            xvInvPdf = 1.0f / (result.pdf + HLF_EPSILON);
             return any(rayData.throughput > 0.f);
         }
         else
@@ -591,37 +593,57 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
     else
     {
         GISample sample = GISample();
+        sample.xv = sd.posW;
+        sample.nv = max(sd.N, sd.faceN);
+        sample.weight = weight;
         // sample.Lo = gScene.envMap.eval(rayData.direction);
-        return GISample();
+        return sample;
     }
 }
 
 /**
     \param[in] pixel
+    \param[in] pos
     \param[in] s
 */
 
 void temporalResampling(const uint2 pixel, const float3 pos, const GISample s, inout SampleGenerator sg)
 {
-    float2 u4 = sampleNext2D(sg); // getRandomF4(pixel, 800);
+    float u = sampleNext1D(sg); // getRandomF4(pixel, 800);
 
     int2 prevPix = getPrevPixel(pos, gScene.camera);
     // int2 prevPixelPos = prevPix; // + int2(gFrameDim * gMotionVector[pixel].xy);
+    // int2 prevPix = (int2)pixel + int2(gFrameDim * gMotionVector[pixel].xy);
     int prevFramePix1D = prevPix.x + (int)gFrameDim.x * prevPix.y;
     GIReservoir currentReservoir = GIReservoir();
-    updateReservoir(currentReservoir, s, length(s.Lo) * s.invPdf, u4.x);
+    updateReservoir(currentReservoir, s, length(s.Lo) * s.invPdf, 0.0f);
 
     if (kUseTemporalResampling && prevPix.x >= 0 && prevPix.y >= 0 && prevPix.x < gFrameDim.x && prevPix.y < gFrameDim.y)
     {
         GIReservoir res = gTemporalReservoirs[prevFramePix1D];
-        bool accept = updateReservoir(res, s, length(s.Lo) * s.invPdf, u4.y);
-        currentReservoir = res;
-        currentReservoir.updated = accept;
 
-        if (currentReservoir.M > kTemporalMax)
+        float depthRatio =
+            (length(pos - gScene.camera.data.posW) + HLF_EPSILON) / (length(res.s.xv - gScene.camera.data.prevPosW) + HLF_EPSILON);
+        // float nvDot = dot(res.s.nv, s.nv);
+        // float3 tmp = pixel.x > gFrameDim.x / 2.0 ? s.nv : res.s.nv;
+        // tmp = length(s.nv - res.s.nv) > 0.8;
+        bool filter = !((dot(res.s.nv, s.nv) < 0.7f && length(res.s.xv - s.xv) > 0.2f) || length(s.nv - res.s.nv) > 0.4);
+        // length(res.s.xv - s.xv) < 0.2f && nvDot > 0.7f && depthRatio > 0.97f
+        if (filter)
         {
-            currentReservoir.wSum *= (float)kTemporalMax / currentReservoir.M;
-            currentReservoir.M = kTemporalMax;
+            bool accept = updateReservoir(res, s, length(s.Lo) * s.invPdf, u);
+            currentReservoir = res;
+            res.s.xv = s.xv;
+            res.s.nv = s.nv;
+            res.s.invPdf = s.invPdf;
+            res.s.weight = s.weight;
+            // currentReservoir.updated = accept;
+
+            if (currentReservoir.M > kTemporalMax)
+            {
+                currentReservoir.wSum *= (float)kTemporalMax / currentReservoir.M;
+                currentReservoir.M = kTemporalMax;
+            }
         }
     }
 
@@ -661,7 +683,7 @@ void sampling(uint2 pixel, uint2 screen)
 
         GISample sample = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, sg);
 
-        temporalResampling(pixel, sd.posW, sample, sg);
+        temporalResampling(pixel, computeRayOrigin(sd.posW, -sd.faceN), sample, sg);
         sample.ns = color;
         // gInitSamples[pixel.x + screen.x * pixel.y] = sample;
     }

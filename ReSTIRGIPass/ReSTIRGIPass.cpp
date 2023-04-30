@@ -45,7 +45,7 @@ const std::string kInputDepth = "depth";
 const std::string kInputNoise = "noiseTex";
 const std::string kInputDirectLighting = "directLighting";
 
-const std::string kSecondaryRayLaunchProbability= "secondaryRayLaunchProbability";
+const std::string kSecondaryRayLaunchProbability = "secondaryRayLaunchProbability";
 const std::string kRussianRouletteProbability = "russianRouletteProbability";
 const std::string kUseImportanceSampling = "useImportanceSampling";
 const std::string kUseInfiniteBounces = "useInfiniteBounces";
@@ -68,7 +68,7 @@ const Falcor::ChannelList kInputChannels = {
     {kInputVBuffer, "gVBuffer", "Visibility Buffer"},
     {kInputMotionVector, "gMotionVector", "Motion Vector"},
     {kInputDepth, "gDepth", "Depth"},
-    {kInputDirectLighting,"gDirectLighting","Radiance from Direct Lighting",true},
+    {kInputDirectLighting, "gDirectLighting", "Radiance from Direct Lighting", true},
     {kInputNoise, "gNoiseTex", "Noise Texture"},
 };
 
@@ -105,21 +105,21 @@ ReSTIRGIPass::SharedPtr ReSTIRGIPass::create(std::shared_ptr<Device> pDevice, co
 Dictionary ReSTIRGIPass::getScriptingDictionary()
 {
     Dictionary d;
-    d[kSecondaryRayLaunchProbability]=mStaticParams.mSecondaryRayLaunchProbability;
-    d[kRussianRouletteProbability]=mStaticParams.mRussianRouletteProbability;
-    d[kUseImportanceSampling]=mStaticParams.mUseImportanceSampling;
-    d[kUseInfiniteBounces]=mStaticParams.mUseInfiniteBounces;
-    d[kMaxBounce]=mStaticParams.mMaxBounces;
-    d[kUseTemporalResampling]=mStaticParams.mTemporalResampling;
-    d[kTemporalReservoirSize]=mStaticParams.mTemporalReservoirSize;
-    d[kUseSpatialResampling]=mStaticParams.mSpatialResampling;
-    d[kSpatialReservoirSize]=mStaticParams.mSpatialReservoirSize;
-    d[kSpatialResamplingRadius]=mStaticParams.mSampleRadius;
-    d[kSpatialNeighborsCount]=mStaticParams.mSpatialNeighborsCount;
-    d[kDoVisibilityTestEachSamples]=mStaticParams.mDoVisibilityTestEachSamples;
-    d[kEvalDirectLighting]=mStaticParams.mEvalDirect;
-    d[kShowVisibilityPointLi]=mStaticParams.mShowVisibilityPointLi;
-    d[kSplitView]=mStaticParams.mSplitView;
+    d[kSecondaryRayLaunchProbability] = mStaticParams.mSecondaryRayLaunchProbability;
+    d[kRussianRouletteProbability] = mStaticParams.mRussianRouletteProbability;
+    d[kUseImportanceSampling] = mStaticParams.mUseImportanceSampling;
+    d[kUseInfiniteBounces] = mStaticParams.mUseInfiniteBounces;
+    d[kMaxBounce] = mStaticParams.mMaxBounces;
+    d[kUseTemporalResampling] = mStaticParams.mTemporalResampling;
+    d[kTemporalReservoirSize] = mStaticParams.mTemporalReservoirSize;
+    d[kUseSpatialResampling] = mStaticParams.mSpatialResampling;
+    d[kSpatialReservoirSize] = mStaticParams.mSpatialReservoirSize;
+    d[kSpatialResamplingRadius] = mStaticParams.mSampleRadius;
+    d[kSpatialNeighborsCount] = mStaticParams.mSpatialNeighborsCount;
+    d[kDoVisibilityTestEachSamples] = mStaticParams.mDoVisibilityTestEachSamples;
+    d[kEvalDirectLighting] = mStaticParams.mEvalDirect;
+    d[kShowVisibilityPointLi] = mStaticParams.mShowVisibilityPointLi;
+    d[kSplitView] = mStaticParams.mSplitView;
 
     return d;
 }
@@ -128,36 +128,65 @@ void ReSTIRGIPass::parseDictionary(const Dictionary& dict)
 {
     for (const auto& [k, v] : dict)
     {
-        if(k==kSecondaryRayLaunchProbability){
-            mStaticParams.mSecondaryRayLaunchProbability=v;
-        }else if(k==kRussianRouletteProbability){
-            mStaticParams.mRussianRouletteProbability=v;
-        }else if(k==kUseImportanceSampling){
-            mStaticParams.mUseImportanceSampling=v;
-        }else if(k==kUseInfiniteBounces){
-            mStaticParams.mUseInfiniteBounces=v;
-        }else if(k==kMaxBounce){
-            mStaticParams.mMaxBounces=v;
-        }else if(k==kUseTemporalResampling){
-                mStaticParams.mTemporalResampling=v;
-        }else if(k==kTemporalReservoirSize){
-                mStaticParams.mTemporalReservoirSize=v;
-        }else if(k==kUseSpatialResampling){
-                mStaticParams.mSpatialResampling=v;
-        }else if(k==kSpatialReservoirSize){
-                mStaticParams.mSpatialReservoirSize=v;
-        }else if(k==kSpatialResamplingRadius){
-                mStaticParams.mSampleRadius=v;
-        }else if(k==kSpatialNeighborsCount){
-                mStaticParams.mSpatialNeighborsCount=v;
-        }else if(k==kDoVisibilityTestEachSamples){
-                mStaticParams.mDoVisibilityTestEachSamples=v;
-        }else if(k==kEvalDirectLighting){
-                mStaticParams.mEvalDirect=v;
-        }else if(k==kShowVisibilityPointLi){
-                mStaticParams.mShowVisibilityPointLi=v;
-        }else if(k==kSplitView){
-                mStaticParams.mSplitView=v;
+        if (k == kSecondaryRayLaunchProbability)
+        {
+            mStaticParams.mSecondaryRayLaunchProbability = v;
+        }
+        else if (k == kRussianRouletteProbability)
+        {
+            mStaticParams.mRussianRouletteProbability = v;
+        }
+        else if (k == kUseImportanceSampling)
+        {
+            mStaticParams.mUseImportanceSampling = v;
+        }
+        else if (k == kUseInfiniteBounces)
+        {
+            mStaticParams.mUseInfiniteBounces = v;
+        }
+        else if (k == kMaxBounce)
+        {
+            mStaticParams.mMaxBounces = v;
+        }
+        else if (k == kUseTemporalResampling)
+        {
+            mStaticParams.mTemporalResampling = v;
+        }
+        else if (k == kTemporalReservoirSize)
+        {
+            mStaticParams.mTemporalReservoirSize = v;
+        }
+        else if (k == kUseSpatialResampling)
+        {
+            mStaticParams.mSpatialResampling = v;
+        }
+        else if (k == kSpatialReservoirSize)
+        {
+            mStaticParams.mSpatialReservoirSize = v;
+        }
+        else if (k == kSpatialResamplingRadius)
+        {
+            mStaticParams.mSampleRadius = v;
+        }
+        else if (k == kSpatialNeighborsCount)
+        {
+            mStaticParams.mSpatialNeighborsCount = v;
+        }
+        else if (k == kDoVisibilityTestEachSamples)
+        {
+            mStaticParams.mDoVisibilityTestEachSamples = v;
+        }
+        else if (k == kEvalDirectLighting)
+        {
+            mStaticParams.mEvalDirect = v;
+        }
+        else if (k == kShowVisibilityPointLi)
+        {
+            mStaticParams.mShowVisibilityPointLi = v;
+        }
+        else if (k == kSplitView)
+        {
+            mStaticParams.mSplitView = v;
         }
     }
 }
@@ -212,16 +241,17 @@ void ReSTIRGIPass::execute(RenderContext* pRenderContext, const RenderData& rend
     }
 
     const auto& pVBuffer = renderData.getTexture(kInputVBuffer);
-//    const auto& pNormal = renderData.getTexture(kInputNormal);
+    //    const auto& pNormal = renderData.getTexture(kInputNormal);
     const auto& pMVec = renderData.getTexture(kInputMotionVector);
+    const auto& pDepth = renderData.getTexture(kInputDepth);
     const auto& pNoise = renderData.getTexture(kInputNoise);
     FALCOR_ASSERT(pNoise);
     mNoiseDim = {pNoise.get()->getHeight(), pNoise.get()->getWidth()};
 
-    initialSampling(pRenderContext, renderData, pVBuffer, pMVec, pNoise);
+    initialSampling(pRenderContext, renderData, pVBuffer, pDepth, pMVec, pNoise);
     //    temporalResampling(pRenderContext, renderData, pMVec, pNoise);
-//    spatialResampling(pRenderContext, renderData, pNoise);
-    finalShading(pRenderContext, renderData, pNoise);
+    //    spatialResampling(pRenderContext, renderData, pNoise);
+    finalShading(pRenderContext, renderData, pVBuffer, pDepth, pNoise);
     endFrame();
     // renderData holds the requested resources
     // auto& pTexture = renderData.getTexture("src");
@@ -232,25 +262,25 @@ Program::DefineList ReSTIRGIPass::getStaticDefines()
     Program::DefineList defines;
     defines.add("P_RR", std::to_string(mStaticParams.mRussianRouletteProbability));
     defines.add("P_SECONDARY_RR", std::to_string(mStaticParams.mSecondaryRayLaunchProbability));
-    defines.add("USE_IMPORTANCE_SAMPLING",mStaticParams.mUseImportanceSampling?"1":"0");
-    defines.add("USE_ENVLIGHT", mStaticParams.mUseEnvLight?"1":"0");
-    defines.add("USE_EMISSIVE_LIGHTS", mStaticParams.mUseEmissiveLights?"1":"0");
-    defines.add("USE_ANALYTIC_LIGHTS",mStaticParams.mUseAnalyticsLights?"1":"0");
-    defines.add("USE_INFINITE_BOUNCES", mStaticParams.mUseInfiniteBounces?"1":"0");
+    defines.add("USE_IMPORTANCE_SAMPLING", mStaticParams.mUseImportanceSampling ? "1" : "0");
+    defines.add("USE_ENVLIGHT", mStaticParams.mUseEnvLight ? "1" : "0");
+    defines.add("USE_EMISSIVE_LIGHTS", mStaticParams.mUseEmissiveLights ? "1" : "0");
+    defines.add("USE_ANALYTIC_LIGHTS", mStaticParams.mUseAnalyticsLights ? "1" : "0");
+    defines.add("USE_INFINITE_BOUNCES", mStaticParams.mUseInfiniteBounces ? "1" : "0");
     defines.add("MAX_BOUNCES", std::to_string(mStaticParams.mMaxBounces));
 
-    defines.add("USE_TEMPORAL_RESAMPLING", mStaticParams.mTemporalResampling?"1":"0");
+    defines.add("USE_TEMPORAL_RESAMPLING", mStaticParams.mTemporalResampling ? "1" : "0");
     defines.add("TEMPORAL_RESERVOIR_SIZE", std::to_string(mStaticParams.mTemporalReservoirSize));
-    defines.add("USE_SPATIAL_RESAMPLING", mStaticParams.mSpatialResampling?"1":"0");
-//    defines.add("USE_MIS", mStaticParams.mUseMIS?"1":"0");
+    defines.add("USE_SPATIAL_RESAMPLING", mStaticParams.mSpatialResampling ? "1" : "0");
+    //    defines.add("USE_MIS", mStaticParams.mUseMIS?"1":"0");
     defines.add("SPATIAL_NEIGHBORHOOD_COUNTS", std::to_string(mStaticParams.mSpatialNeighborsCount));
     defines.add("SPATIAL_RESAMPLING_RADIUS", std::to_string(mStaticParams.mSampleRadius));
     defines.add("SPATIAL_RESERVOIR_SIZE", std::to_string(mStaticParams.mSpatialReservoirSize));
-    defines.add("DO_VISIBILITY_TEST_EACH_SAMPLES", mStaticParams.mDoVisibilityTestEachSamples?"1":"0");
+    defines.add("DO_VISIBILITY_TEST_EACH_SAMPLES", mStaticParams.mDoVisibilityTestEachSamples ? "1" : "0");
 
-    defines.add("EVAL_DIRECT", mStaticParams.mEvalDirect?"1":"0");
-    defines.add("SHOW_VISIBILITY_POINT_LI", mStaticParams.mShowVisibilityPointLi?"1":"0");
-    defines.add("DEBUG_SPLIT_VIEW", mStaticParams.mSplitView?"1":"0");
+    defines.add("EVAL_DIRECT", mStaticParams.mEvalDirect ? "1" : "0");
+    defines.add("SHOW_VISIBILITY_POINT_LI", mStaticParams.mShowVisibilityPointLi ? "1" : "0");
+    defines.add("DEBUG_SPLIT_VIEW", mStaticParams.mSplitView ? "1" : "0");
     return defines;
 }
 
@@ -258,6 +288,7 @@ void ReSTIRGIPass::initialSampling(
     RenderContext* pRenderContext,
     const RenderData& renderData,
     const Texture::SharedPtr& pVBuffer,
+    const Texture::SharedPtr& pDepth,
     const Texture::SharedPtr& pMotionVector,
     const Texture::SharedPtr& pNoiseTexture
 )
@@ -280,19 +311,19 @@ void ReSTIRGIPass::initialSampling(
     }
     FALCOR_ASSERT(mpInitialSamplingPass);
     mpInitialSamplingPass->getProgram()->addDefines(getStaticDefines());
-//    mpInitialSamplingPass->getProgram()->addDefine("USE_TEMPORAL_RESAMPLING","1");
-//    mpInitialSamplingPass->getProgram()->addDefine("USE_INFINITE_BOUNCES","1");
+    //    mpInitialSamplingPass->getProgram()->addDefine("USE_TEMPORAL_RESAMPLING","1");
+    //    mpInitialSamplingPass->getProgram()->addDefine("USE_INFINITE_BOUNCES","1");
 
     auto var = mpInitialSamplingPass->getRootVar();
 
-//    if (!mpInitialSamples)
-//    {
-//        uint32_t frameDim1D = mFrameDim.x * mFrameDim.y;
-//        mpInitialSamples = Buffer::createStructured(
-//            mpDevice.get(), var["gInitSamples"], frameDim1D, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
-//            Buffer::CpuAccess::None, nullptr, false
-//        );
-//    }
+    //    if (!mpInitialSamples)
+    //    {
+    //        uint32_t frameDim1D = mFrameDim.x * mFrameDim.y;
+    //        mpInitialSamples = Buffer::createStructured(
+    //            mpDevice.get(), var["gInitSamples"], frameDim1D, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+    //            Buffer::CpuAccess::None, nullptr, false
+    //        );
+    //    }
     // if (!mpPrimaryThroughput)
     // {
     //     mpPrimaryThroughput = Texture::create2D(
@@ -319,12 +350,13 @@ void ReSTIRGIPass::initialSampling(
         );
     }
 
-//    var["gInitSamples"] = mpInitialSamples;
+    //    var["gInitSamples"] = mpInitialSamples;
     var["gTemporalReservoirs"] = mpTemporalReservoirs;
     //    var["gPrevFrameReservoirs"] = mpSpatialReservoirs;
     var["gIntermediateReservoirs"] = mpIntermediateReservoirs;
 
     var["gVBuffer"] = pVBuffer;
+    var["gDepth"] = pDepth;
     var["gNoise"] = pNoiseTexture;
     var["gMotionVector"] = pMotionVector;
 
@@ -332,7 +364,6 @@ void ReSTIRGIPass::initialSampling(
     var["CB"]["gFrameDim"] = mFrameDim;
     var["CB"]["gNoiseTexDim"] = mNoiseDim;
     var["CB"]["gRandUint"] = mEngine();
-
 
     mpSampleGenerator->setShaderData(var);
     mpScene->setRaytracingShaderData(pRenderContext, var);
@@ -385,61 +416,68 @@ void ReSTIRGIPass::initialSampling(
 //     mpTemporalResamplingPass->execute(pRenderContext, {mFrameDim, 1u});
 // }
 
-//void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pNoiseTexture)
+// void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr&
+// pNoiseTexture)
 //{
-//    //    FALCOR_ASSERT();
-//    if (!mpSpatialResamplingPass)
-//    {
-//        Program::Desc desc;
-//        desc.addShaderModules(mpScene->getShaderModules());
-//        desc.addShaderLibrary(kSpatialSamplingFile).setShaderModel(kShaderModel).csEntry("main");
-//        desc.addTypeConformances(mpScene->getTypeConformances());
-//        auto defines = mpScene->getSceneDefines();
-//        FALCOR_ASSERT(mpSampleGenerator);
-//        defines.add(mpSampleGenerator->getDefines());
-//        defines.add(getStaticDefines());
-//        mpSpatialResamplingPass = ComputePass::create(mpDevice, desc, defines, true);
-//    }
+//     //    FALCOR_ASSERT();
+//     if (!mpSpatialResamplingPass)
+//     {
+//         Program::Desc desc;
+//         desc.addShaderModules(mpScene->getShaderModules());
+//         desc.addShaderLibrary(kSpatialSamplingFile).setShaderModel(kShaderModel).csEntry("main");
+//         desc.addTypeConformances(mpScene->getTypeConformances());
+//         auto defines = mpScene->getSceneDefines();
+//         FALCOR_ASSERT(mpSampleGenerator);
+//         defines.add(mpSampleGenerator->getDefines());
+//         defines.add(getStaticDefines());
+//         mpSpatialResamplingPass = ComputePass::create(mpDevice, desc, defines, true);
+//     }
 //
-//    FALCOR_ASSERT(mpSpatialResamplingPass);
-//    mpSpatialResamplingPass->getProgram()->addDefines(getStaticDefines());
-//    auto var = mpSpatialResamplingPass->getRootVar();
+//     FALCOR_ASSERT(mpSpatialResamplingPass);
+//     mpSpatialResamplingPass->getProgram()->addDefines(getStaticDefines());
+//     auto var = mpSpatialResamplingPass->getRootVar();
 //
-//    if (!mpSpatialReservoirs)
-//    {
-//        uint32_t reservoirCounts = mFrameDim.x * mFrameDim.y;
-//        mpSpatialReservoirs = Buffer::createStructured(
-//            mpDevice.get(), var["gSpatialReservoirs"], reservoirCounts,
-//            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
-//        );
-//    }
-//    FALCOR_ASSERT(mpIntermediateReservoirs);
-//    FALCOR_ASSERT(mpSpatialReservoirs);
-//    //    if(!mpSpatialReservoirs){
-//    //        uint32_t reservoirCounts=mFrameDim.x*mFrameDim.y;
-//    //        mpSpatialReservoirs = Buffer::createStructured(
-//    //            mpDevice.get(), var["gSpatialReservoirs"], reservoirCounts, ResourceBindFlags::ShaderResource|
-//    //            ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
-//    //        );
-//    //    }
-//     var["gTemporalReservoirs"] = mpTemporalReservoirs;
-//    var["gSpatialReservoirs"] = mpSpatialReservoirs;
-//    var["gIntermediateReservoirs"] = mpIntermediateReservoirs;
+//     if (!mpSpatialReservoirs)
+//     {
+//         uint32_t reservoirCounts = mFrameDim.x * mFrameDim.y;
+//         mpSpatialReservoirs = Buffer::createStructured(
+//             mpDevice.get(), var["gSpatialReservoirs"], reservoirCounts,
+//             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+//         );
+//     }
+//     FALCOR_ASSERT(mpIntermediateReservoirs);
+//     FALCOR_ASSERT(mpSpatialReservoirs);
+//     //    if(!mpSpatialReservoirs){
+//     //        uint32_t reservoirCounts=mFrameDim.x*mFrameDim.y;
+//     //        mpSpatialReservoirs = Buffer::createStructured(
+//     //            mpDevice.get(), var["gSpatialReservoirs"], reservoirCounts, ResourceBindFlags::ShaderResource|
+//     //            ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+//     //        );
+//     //    }
+//      var["gTemporalReservoirs"] = mpTemporalReservoirs;
+//     var["gSpatialReservoirs"] = mpSpatialReservoirs;
+//     var["gIntermediateReservoirs"] = mpIntermediateReservoirs;
 //
-//    var["gNoise"] = pNoiseTexture;
+//     var["gNoise"] = pNoiseTexture;
 //
-//    var["CB"]["gFrameCount"] = mFrameCount;
-//    var["CB"]["gFrameDim"] = mFrameDim;
-//    var["CB"]["gNoiseTexDim"] = mNoiseDim;
+//     var["CB"]["gFrameCount"] = mFrameCount;
+//     var["CB"]["gFrameDim"] = mFrameDim;
+//     var["CB"]["gNoiseTexDim"] = mNoiseDim;
 //
-//    var["gScene"] = mpScene->getParameterBlock();
+//     var["gScene"] = mpScene->getParameterBlock();
 //
-//    mpSampleGenerator->setShaderData(var);
-//    mpScene->setRaytracingShaderData(pRenderContext, var);
-//    mpSpatialResamplingPass->execute(pRenderContext, {mFrameDim, 1u});
-//}
+//     mpSampleGenerator->setShaderData(var);
+//     mpScene->setRaytracingShaderData(pRenderContext, var);
+//     mpSpatialResamplingPass->execute(pRenderContext, {mFrameDim, 1u});
+// }
 
-void ReSTIRGIPass::finalShading(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pNoiseTexture)
+void ReSTIRGIPass::finalShading(
+    RenderContext* pRenderContext,
+    const RenderData& renderData,
+    const Texture::SharedPtr& pVBuffer,
+    const Texture::SharedPtr& pDepth,
+    const Texture::SharedPtr& pNoiseTexture
+)
 {
     if (!mpFinalShadingPass)
     {
@@ -448,7 +486,6 @@ void ReSTIRGIPass::finalShading(RenderContext* pRenderContext, const RenderData&
         desc.addShaderLibrary(kFinalShadingFile).setShaderModel(kShaderModel).csEntry("main");
         desc.addTypeConformances(mpScene->getTypeConformances());
         FALCOR_ASSERT(mpSampleGenerator);
-
         auto defines = mpScene->getSceneDefines();
         defines.add(mpSampleGenerator->getDefines());
         defines.add(getStaticDefines());
@@ -462,9 +499,10 @@ void ReSTIRGIPass::finalShading(RenderContext* pRenderContext, const RenderData&
     auto var = mpFinalShadingPass->getRootVar();
     FALCOR_ASSERT(mpSpatialReservoirs);
 
-//    var["gInitSamples"] = mpInitialSamples;
+    //    var["gInitSamples"] = mpInitialSamples;
     var["gIntermediateReservoirs"] = mpIntermediateReservoirs;
     var["gNoise"] = pNoiseTexture;
+    var["gVBuffer"] = pVBuffer;
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = mFrameDim;
@@ -493,42 +531,50 @@ void ReSTIRGIPass::endFrame()
     mFrameCount++;
 }
 
-void ReSTIRGIPass::renderUI(Gui::Widgets& widget) {
+void ReSTIRGIPass::renderUI(Gui::Widgets& widget)
+{
     bool dirty = false;
     dirty |= widget.checkbox("Enable ReSTIR", mStaticParams.mEnableReSTIR);
     dirty |= widget.var("Secondary Ray Probability", mStaticParams.mSecondaryRayLaunchProbability, 0.f, 1.f);
     dirty |= widget.var("Russian Roulette Probability", mStaticParams.mRussianRouletteProbability, 0.f, 1.f);
     dirty |= widget.checkbox("Use Infinite Bounces", mStaticParams.mUseInfiniteBounces);
-    if(mStaticParams.mUseInfiniteBounces)
-        dirty |= widget.var("Max Bounces", mStaticParams.mMaxBounces,0u,30u);
+    if (mStaticParams.mUseInfiniteBounces)
+        dirty |= widget.var("Max Bounces", mStaticParams.mMaxBounces, 0u, 30u);
 
-    if(Gui::Group temporalGroup = widget.group("Temporal Resampling",true)){
+    if (Gui::Group temporalGroup = widget.group("Temporal Resampling", true))
+    {
         dirty |= temporalGroup.checkbox("Use Temporal Resampling", mStaticParams.mTemporalResampling);
-        if(mStaticParams.mTemporalResampling){
+        if (mStaticParams.mTemporalResampling)
+        {
             dirty |= temporalGroup.var("Reservoir Size", mStaticParams.mTemporalReservoirSize, 1u, 50u);
         }
-
     }
-    if(auto spatialGroup = widget.group("Spatial Resampling", true)){
+    if (auto spatialGroup = widget.group("Spatial Resampling", true))
+    {
         dirty |= spatialGroup.checkbox("Use Spatial Resampling", mStaticParams.mSpatialResampling);
-        if(mStaticParams.mSpatialResampling){
-            dirty |= spatialGroup.var("Neighbors Count", mStaticParams.mSpatialNeighborsCount,1u,50u);
+        if (mStaticParams.mSpatialResampling)
+        {
+            dirty |= spatialGroup.var("Neighbors Count", mStaticParams.mSpatialNeighborsCount, 1u, 50u);
             dirty |= spatialGroup.var("Sample Radius", mStaticParams.mSampleRadius, 1u, 500u);
             dirty |= spatialGroup.var("Reservoir Size", mStaticParams.mSpatialReservoirSize, 1u, 500u);
             dirty |= spatialGroup.checkbox("Do Visibility-test each Sample", mStaticParams.mDoVisibilityTestEachSamples);
         }
     }
-    if(auto debugGroup=widget.group("Debug Property", true)){
+    if (auto debugGroup = widget.group("Debug Property", true))
+    {
         dirty |= debugGroup.checkbox("Debug Split View", mStaticParams.mSplitView);
         dirty |= debugGroup.checkbox("Eval Direct Lighting", mStaticParams.mEvalDirect);
-        if(!mStaticParams.mEvalDirect){
+        if (!mStaticParams.mEvalDirect)
+        {
             dirty |= debugGroup.checkbox("Show Visibility point in-irradiance", mStaticParams.mShowVisibilityPointLi);
-        }else{
-            mStaticParams.mShowVisibilityPointLi=false;
+        }
+        else
+        {
+            mStaticParams.mShowVisibilityPointLi = false;
         }
     }
-    if(dirty){
-        mOptionsChanged=true;
+    if (dirty)
+    {
+        mOptionsChanged = true;
     }
 }
-
