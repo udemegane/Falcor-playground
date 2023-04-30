@@ -624,11 +624,8 @@ void temporalResampling(const uint2 pixel, const float3 pos, const GISample s, i
 
         float depthRatio =
             (length(pos - gScene.camera.data.posW) + HLF_EPSILON) / (length(res.s.xv - gScene.camera.data.prevPosW) + HLF_EPSILON);
-        // float nvDot = dot(res.s.nv, s.nv);
-        // float3 tmp = pixel.x > gFrameDim.x / 2.0 ? s.nv : res.s.nv;
-        // tmp = length(s.nv - res.s.nv) > 0.8;
+
         bool filter = !((dot(res.s.nv, s.nv) < 0.7f && length(res.s.xv - s.xv) > 0.2f) || length(s.nv - res.s.nv) > 0.4);
-        // length(res.s.xv - s.xv) < 0.2f && nvDot > 0.7f && depthRatio > 0.97f
         if (filter)
         {
             bool accept = updateReservoir(res, s, length(s.Lo) * s.invPdf, u);
@@ -638,7 +635,6 @@ void temporalResampling(const uint2 pixel, const float3 pos, const GISample s, i
             res.s.invPdf = s.invPdf;
             res.s.weight = s.weight;
             // currentReservoir.updated = accept;
-
             if (currentReservoir.M > kTemporalMax)
             {
                 currentReservoir.wSum *= (float)kTemporalMax / currentReservoir.M;

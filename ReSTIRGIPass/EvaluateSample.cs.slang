@@ -82,7 +82,7 @@ GIReservoir spatialResampling(uint2 pixel, inout SampleGenerator sg)
             GIReservoir rn = gIntermediateReservoirs[neighbor.x + gFrameDim.x * neighbor.y];
 
             // angle test
-            if (dot(rn.s.nv, s.nv) >= 0.5)
+            if (dot(rn.s.nv, s.nv) >= 0.8)
             {
                 // calc jacobian
                 float3 s2v = s.xv - rn.s.xs;
@@ -174,35 +174,31 @@ float3 finalShading(uint2 pixel, GIReservoir res, inout SampleGenerator sg)
     // else
     {
         float3 color = res.s.Lo * getInvPDF(res);
-        if (false)
-        {
-            const HitInfo hit = HitInfo(gVBuffer[pixel]);
-            if (hit.isValid())
-            {
-                let lod = ExplicitLodTextureSampler(0.f);
-                float3 primaryRayDir = gScene.camera.computeRayPinhole(pixel, gFrameDim, false).dir;
-                float3 primaryRayOrigin = gScene.camera.getPosition();
-                ShadingData sd = loadShadingData(hit, primaryRayDir, primaryRayOrigin, lod);
-                let mi = gScene.materials.getMaterialInstance(sd, lod);
-                float3 wo = (res.s.xs - res.s.xv);
-                res.s.weight =
-                    (mi.eval(sd, wo, sg) * getInvPDF(res) + HLF_EPSILON) / (mi.evalPdf(sd, wo, kUseImportanceSampling) + HLF_EPSILON);
-            }
-        }
+
+        // if (false)
+        // {
+        //     const HitInfo hit = HitInfo(gVBuffer[pixel]);
+        //     if (hit.isValid())
+        //     {
+        //         let lod = ExplicitLodTextureSampler(0.f);
+        //         float3 primaryRayDir = gScene.camera.computeRayPinhole(pixel, gFrameDim, false).dir;
+        //         float3 primaryRayOrigin = gScene.camera.getPosition();
+        //         ShadingData sd = loadShadingData(hit, primaryRayDir, primaryRayOrigin, lod);
+        //         let mi = gScene.materials.getMaterialInstance(sd, lod);
+        //         float3 wo = (res.s.xs - res.s.xv);
+        //         res.s.weight = (mi.eval(sd, wo, sg) * getInvPDF(res) * dot(wo, -primaryRayDir) + HLF_EPSILON) /
+        //                        (mi.evalPdf(sd, wo, kUseImportanceSampling) + HLF_EPSILON);
+        //     }
+        // }
 
         color *= res.s.weight;
 
-        // color = float(res.updated);
-
         // color = abs(res.s.invPdf); // getInvPDF(res);
         gDiffuseRadiance[pixel] = float4(color, res.s.sceneLength);
+        // color = pixel.x > gFrameDim.x / 2.0 ? float(res.updated) : color;
 
         return color; //+ (kEvalDirect ? gInitSamples[pixel1D].ns : float3(0.f));
     }
-
-    // return res.s.Lo * gThroughput[pixel];
-
-    // return gInitSamples[pixel1D].Lo * gThroughput[pixel];
 }
 
 [numthreads(16, 16, 1)]
