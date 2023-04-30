@@ -431,11 +431,15 @@ void pathTrace(inout ScatterRayData rayData)
         float hitT;
         if (traceRayInline(ray, hit, hitT))
         {
-            handleHit(hit, hitT, rayData);
-            // Russian rourette
-            if (sampleNext1D(rayData.sg) > prr)
+            if (handleHit(hit, hitT, rayData))
+            {
+                // Russian rourette
+                if (sampleNext1D(rayData.sg) > prr)
+                    break;
+                rayData.throughput *= invPrr;
+            }
+            else
                 break;
-            rayData.throughput *= invPrr;
         }
         else
         {
@@ -549,38 +553,40 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
 {
     BSDFSample result;
 
-    // Prepare secondry ray.
+    // Prepare secondary ray.
     ScatterRayData rayData = ScatterRayData(sg);
-    float invPdf = 0.f;
-
-    // terminatedの処理が怪しい
+    float invPdf;
+    // Only BSDF Sampling is correct yet.
     prepareInitialSampleRay(InitialSamplePDFType::BSDF, sd, isCurveHit, mi, rayData, invPdf);
 
-    // Launch ray.
+    // Prepare and Launch ray.
     Ray ray = Ray(rayData.origin, rayData.direction, 0.f, kRayMax);
     HitInfo hit;
     float hitT;
-
     // Init ray throughput weight for spatial resampling.
-    float3 weight = rayData.throughput;
+    const float3 weight = rayData.throughput;
     rayData.throughput = float3(1.0f);
     if (traceRayInline(ray, hit, hitT))
     {
         // Compute Indirect radiance
         bool validHit = handleHit(hit, hitT, rayData);
+        // Fetch sampling points data
+        let lod = ExplicitLodTextureSampler(0.f);
+        ShadingData sampledSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
+
+        // Compute Multi-bounce indirect lighting
         if (sampleNext1D(sg) <= prrSecondry && validHit && kUseInfinitBounce)
         {
             rayData.throughput *= invPrrSecondry;
             pathTrace(rayData);
         }
-        GISample sample = GISample();
+
         // Set sample.
+        GISample sample = GISample();
         sample.Lo = rayData.radiance;
         sample.xv = sd.posW;
         sample.nv = max(sd.N, sd.faceN);
 
-        let lod = ExplicitLodTextureSampler(0.f);
-        ShadingData sampledSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
         sample.xs = sampledSd.posW;
         sample.ns = max(sampledSd.N, sampledSd.faceN);
 
