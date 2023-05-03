@@ -180,21 +180,24 @@ float3 finalShading(uint2 pixel, GIReservoir res, inout SampleGenerator sg)
     {
         float3 color = res.s.Lo * getInvPDF(res);
 
-        // if (false)
-        // {
-        //     const HitInfo hit = HitInfo(gVBuffer[pixel]);
-        //     if (hit.isValid())
-        //     {
-        //         let lod = ExplicitLodTextureSampler(0.f);
-        //         float3 primaryRayDir = gScene.camera.computeRayPinhole(pixel, gFrameDim, false).dir;
-        //         float3 primaryRayOrigin = gScene.camera.getPosition();
-        //         ShadingData sd = loadShadingData(hit, primaryRayDir, primaryRayOrigin, lod);
-        //         let mi = gScene.materials.getMaterialInstance(sd, lod);
-        //         float3 wo = (res.s.xs - res.s.xv);
-        //         res.s.weight = (mi.eval(sd, wo, sg) * getInvPDF(res) * dot(wo, -primaryRayDir) + HLF_EPSILON) /
-        //                        (mi.evalPdf(sd, wo, kUseImportanceSampling) + HLF_EPSILON);
-        //     }
-        // }
+        if (false)
+        {
+            const HitInfo hit = HitInfo(gVBuffer[pixel]);
+            if (hit.isValid())
+            {
+                let lod = ExplicitLodTextureSampler(0.f);
+                float3 primaryRayDir = gScene.camera.computeRayPinhole(pixel, gFrameDim, false).dir;
+                float3 primaryRayOrigin = gScene.camera.getPosition();
+                ShadingData sd = loadShadingData(hit, primaryRayDir, primaryRayOrigin, lod);
+                let mi = gScene.materials.getMaterialInstance(sd, lod);
+                float3 wo = normalize(res.s.xs - res.s.xv);
+
+                // res.s.weight = (mi.eval(sd, wo, sg) * dot(wo, -primaryRayDir)) / (mi.evalPdf(sd, wo, kUseImportanceSampling) +
+                // HLF_EPSILON);
+
+                res.s.weight = (mi.getProperties(sd).diffuseReflectionAlbedo + mi.getProperties(sd).specularReflectionAlbedo);
+            }
+        }
 
         color *= res.s.weight;
 

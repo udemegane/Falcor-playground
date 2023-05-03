@@ -22,6 +22,9 @@ static const uint kSampleRadius = SPATIAL_RESAMPLING_RADIUS;
 static const uint kSpatialMax = SPATIAL_RESERVOIR_SIZE;
 static const bool kDoVisibilityTestEverySample = DO_VISIBILITY_TEST_EACH_SAMPLES;
 
+// Debug
+static const bool kUseReferencePathTracer = false;
 static const bool kEvalDirect = EVAL_DIRECT;
 static const bool kShowVisibilityPointLi = SHOW_VISIBILITY_POINT_LI;
 static const bool kDebugSplitView = DEBUG_SPLIT_VIEW;
+

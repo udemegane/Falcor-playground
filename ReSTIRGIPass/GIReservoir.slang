@@ -1,4 +1,5 @@
 #include "Utils/Math/MathConstants.slangh"
+import Utils.Color.ColorHelpers;
 struct GISample
 {
     float3 xv;
@@ -37,6 +38,7 @@ struct GIReservoir
         M = 0;
         updated = false;
         ps = 0.f;
+        W = 0.f;
     }
 
     // [mutating] bool update(const GISample si, const float wi, const float u)
@@ -76,7 +78,7 @@ bool updateReservoir(inout GIReservoir r, const in GISample si, const float wi, 
     if (accept || r.M == 0)
     {
         r.s = si;
-        r.ps = length(si.Lo) * si.invPdf;
+        r.ps = luminance(si.Lo) * si.invPdf;
     }
     r.M++;
     return accept;

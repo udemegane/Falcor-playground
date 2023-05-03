@@ -1,6 +1,8 @@
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 import Scene.Scene;
+import Utils.Attributes;
+import Utils.Color.ColorHelpers;
 // import Scene.Shading;
 // import Scene.Material.ShadingUtils;
 import Utils.Math.MathHelpers;
@@ -518,10 +520,10 @@ bool prepareInitialSampleRay(
             rayData.origin = sd.computeNewRayOrigin();
         rayData.direction = randomDir;
         // mi.getProperties(sd).
-        //  mi.
         float woDotN = dot(randomDir, max(sd.N, sd.faceN));
         woDotN = (hasTransmission ? woDotN : max(woDotN, 0.f));
         rayData.throughput *= mi.eval(sd, randomDir, rayData.sg) * woDotN * xvInvPdf;
+        // rayData.throughput *= (mi.getProperties(sd).diffuseReflectionAlbedo + mi.getProperties(sd).specularReflectionAlbedo) * woDotN;
         break;
     case InitialSamplePDFType::CosineWeighted:
         // TODO implement this.
@@ -569,12 +571,12 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
     // Prepare secondary ray.
     float invPdf;
     // Only BSDF Sampling is correct yet.
-    // prepareInitialSampleRay(InitialSamplePDFType::BSDF, sd, isCurveHit, mi, rayData, invPdf);
+    prepareInitialSampleRay(InitialSamplePDFType::BSDF, sd, isCurveHit, mi, rayData, invPdf);
 
     // float3 secondaryRayOrigin = isCurveHit ? sd.posW - sd.curveRadius * sd.N : sd.computeNewRayOrigin();
     // prepareScatterRay(sd, mi, secondaryRayOrigin, rayData, invPdf);
 
-    prepareScatterRay(sd, mi, computeRayOrigin(sd.posW, max(sd.N, sd.faceN)), rayData, invPdf);
+    // prepareScatterRay(sd, mi, computeRayOrigin(sd.posW, max(sd.N, sd.faceN)), rayData, invPdf);
 
     // Prepare and Launch ray.
     Ray ray = Ray(rayData.origin, rayData.direction, 0.f, kRayMax);
@@ -582,8 +584,6 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
     float hitT;
     // Init ray throughput weight for spatial resampling.
     const float3 weight = rayData.throughput;
-    // const float3 weight = float3(1.0f);
-    // rayData.throughput = float3(1.0f);
     if (traceRayInline(ray, hit, hitT))
     {
         // Compute Indirect radiance
@@ -591,8 +591,8 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
         let lod = ExplicitLodTextureSampler(0.f);
         ShadingData samplePointSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
         let SamplePointMi = gScene.materials.getMaterialInstance(samplePointSd, lod);
-        rayData.radiance += rayData.throughput * (evalDirectAnalytic(samplePointSd, SamplePointMi, rayData.sg) +
-                                                  SamplePointMi.getProperties(samplePointSd).emission);
+        rayData.radiance +=
+            (evalDirectAnalytic(samplePointSd, SamplePointMi, rayData.sg) + SamplePointMi.getProperties(samplePointSd).emission);
         float3 rayOrigin = hit.getType() == HitType::Curve
                                ? samplePointSd.posW - samplePointSd.curveRadius * samplePointSd.N
                                : samplePointSd.computeNewRayOrigin(!(mi.getLobeTypes(samplePointSd) & (uint)LobeType::Transmission));
@@ -621,7 +621,7 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
 
         // Set sample.
         GISample sample = GISample();
-        sample.Lo = rayData.radiance / (weight + HLF_EPSILON);
+        sample.Lo = rayData.radiance;
         sample.xv = sd.posW;
         sample.nv = max(sd.N, sd.faceN);
 
@@ -660,7 +660,8 @@ void temporalResampling(const uint2 pixel, const float3 pos, const GISample s, i
     // int2 prevPix = (int2)pixel + int2(gFrameDim * gMotionVector[pixel].xy);
     int prevFramePix1D = prevPix.x + (int)gFrameDim.x * prevPix.y;
     GIReservoir currentReservoir = GIReservoir();
-    updateReservoir(currentReservoir, s, length(s.Lo) * s.invPdf, 0.0f);
+
+    updateReservoir(currentReservoir, s, luminance(s.Lo) * s.invPdf, 0.0f);
 
     if (kUseTemporalResampling && prevPix.x >= 0 && prevPix.y >= 0 && prevPix.x < gFrameDim.x && prevPix.y < gFrameDim.y)
     {
@@ -669,15 +670,13 @@ void temporalResampling(const uint2 pixel, const float3 pos, const GISample s, i
         float depthRatio =
             (length(pos - gScene.camera.data.posW) + HLF_EPSILON) / (length(res.s.xv - gScene.camera.data.prevPosW) + HLF_EPSILON);
 
-        bool filter = !((dot(res.s.nv, s.nv) < 0.7f && length(res.s.xv - s.xv) > 0.2f) || length(s.nv - res.s.nv) > 0.4);
+        bool filter = !((dot(res.s.nv, s.nv) < 0.7f && length(res.s.xv - s.xv) > 0.2f) || (length(s.nv - res.s.nv) > 0.4));
         if (filter)
         {
-            bool accept = updateReservoir(res, s, length(s.Lo) * s.invPdf, u);
+            bool accept = updateReservoir(res, s, luminance(s.Lo) * s.invPdf, u);
+            // mergeReservoirs(currentReservoir, res, res.ps, u);
+            //
             currentReservoir = res;
-            res.s.xv = s.xv;
-            res.s.nv = s.nv;
-            res.s.invPdf = s.invPdf;
-            res.s.weight = s.weight;
             // currentReservoir.updated = accept;
             if (currentReservoir.M > kTemporalMax)
             {
