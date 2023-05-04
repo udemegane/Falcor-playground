@@ -5,9 +5,10 @@ import Scene.Scene;
 import Utils.Geometry.GeometryHelpers;
 
 import Utils.Math.MathHelpers;
+import Rendering.Materials.IsotropicGGX;
 
 import Utils.Sampling.SampleGenerator;
-
+import Rendering.Lights.LightHelpers;
 import RaytracingUtils;
 import GIReservoir;
 import StaticParams;
@@ -19,7 +20,9 @@ Texture2D<float4> gDirectLighting;
 
 RWTexture2D<float4> gColor;
 RWTexture2D<float4> gDiffuseRadiance;
+RWTexture2D<float4> gDiffuseReflectance;
 RWTexture2D<float4> gSpecularRadiance;
+RWTexture2D<float4> gSpecularReflectance;
 
 RWStructuredBuffer<GIReservoir> gIntermediateReservoirs;
 // RWStructuredBuffer<GISample> gInitSamples;
@@ -152,6 +155,42 @@ GIReservoir spatialResampling(uint2 pixel, inout SampleGenerator sg)
     }
 }
 
+float3 evalDirectAnalytic(const ShadingData sd, const IMaterialInstance mi, inout SampleGenerator sg)
+{
+    const uint lightCount = gScene.getLightCount();
+    if (lightCount == 0)
+        return float3(0.f);
+
+    // Pick one of the analytic light sources randomly with equal probability.
+    const uint lightIndex = min(uint(sampleNext1D(sg) * lightCount), lightCount - 1);
+    float invPdf = lightCount; // Light selection pdf = 1.0 / lightCount.
+
+    // Sample local light source.
+    AnalyticLightSample ls;
+    if (!sampleLight(sd.posW, gScene.getLight(lightIndex), sg, ls))
+        return float3(0.f);
+
+    // Reject sample if not in the hemisphere of a BSDF lobe.
+    const uint lobeTypes = mi.getLobeTypes(sd);
+    const bool hasReflection = lobeTypes & uint(LobeType::Reflection);
+    const bool hasTransmission = lobeTypes & uint(LobeType::Transmission);
+    if (dot(ls.dir, sd.N) <= kMinCosTheta && !hasTransmission)
+        return float3(0.f);
+    if (dot(ls.dir, sd.N) >= -kMinCosTheta && !hasReflection)
+        return float3(0.f);
+
+    // Get origin with offset applied in direction of the geometry normal to avoid self-intersection.
+    const float3 origin = computeRayOrigin(sd.posW, dot(sd.faceN, ls.dir) >= 0.f ? sd.faceN : -sd.faceN);
+
+    // Test visibility by tracing a shadow ray.
+    Ray ray = Ray(origin, ls.dir, 0.0f, ls.distance);
+    if (!traceVisibilityRay(ray))
+        return float3(0.0f);
+
+    // Evaluate contribution.
+    return mi.eval(sd, ls.dir, sg) * ls.Li * invPdf;
+}
+
 float3 finalShading(uint2 pixel, GIReservoir res, inout SampleGenerator sg)
 {
     // TODO: implement this.
@@ -179,33 +218,47 @@ float3 finalShading(uint2 pixel, GIReservoir res, inout SampleGenerator sg)
     // else
     {
         float3 color = res.s.Lo * getInvPDF(res);
+        float3 di = 0.f;
+        const HitInfo hit = HitInfo(gVBuffer[pixel]);
+        const float3 primaryRayOrigin = gScene.camera.getPosition();
+        const float3 primaryRayDir = gScene.camera.computeRayPinhole(pixel, gFrameDim).dir;
 
-        if (false)
+        if (hit.isValid())
         {
-            const HitInfo hit = HitInfo(gVBuffer[pixel]);
-            if (hit.isValid())
-            {
-                let lod = ExplicitLodTextureSampler(0.f);
-                float3 primaryRayDir = gScene.camera.computeRayPinhole(pixel, gFrameDim, false).dir;
-                float3 primaryRayOrigin = gScene.camera.getPosition();
-                ShadingData sd = loadShadingData(hit, primaryRayDir, primaryRayOrigin, lod);
-                let mi = gScene.materials.getMaterialInstance(sd, lod);
-                float3 wo = normalize(res.s.xs - res.s.xv);
+            let lod = ExplicitLodTextureSampler(0.f);
+            ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
+            let mi = gScene.materials.getMaterialInstance(sd, lod);
 
-                // res.s.weight = (mi.eval(sd, wo, sg) * dot(wo, -primaryRayDir)) / (mi.evalPdf(sd, wo, kUseImportanceSampling) +
-                // HLF_EPSILON);
+            // di += (mi.getProperties(sd).emission);
+            // di += evalDirectAnalytic(sd, mi, sg);
+            float3 wo = normalize(res.s.xs - res.s.xv);
 
-                res.s.weight = (mi.getProperties(sd).diffuseReflectionAlbedo + mi.getProperties(sd).specularReflectionAlbedo);
-            }
+            res.s.weight = (mi.eval(sd, wo, sg) + HLF_EPSILON) / (mi.evalPdf(sd, wo, kUseImportanceSampling) + HLF_EPSILON);
+
+            color *= res.s.weight;
+            // color += di;
+
+            float3 diffuceReflectance =
+                (max(0.01f, mi.getProperties(sd).diffuseReflectionAlbedo + mi.getProperties(sd).specularTransmissionAlbedo));
+            float3 diffuseRadiance = color / diffuceReflectance;
+            gDiffuseRadiance[pixel] = float4(diffuseRadiance, res.s.sceneLength);
+            gDiffuseReflectance[pixel] = float4(diffuceReflectance, 1.0f);
+
+            const float NdotV = saturate(dot(mi.getProperties(sd).guideNormal, sd.V));
+            const float ggxAlpha = mi.getProperties(sd).roughness * mi.getProperties(sd).roughness;
+            float3 sr = approxSpecularIntegralGGX(mi.getProperties(sd).specularReflectionAlbedo, ggxAlpha, NdotV);
+            float3 specularRadiance = color / max(0.01f, sr);
+            gSpecularRadiance[pixel] = float4(specularRadiance, res.s.sceneLength);
+            gSpecularReflectance[pixel] = float4(sr, 1.0f);
+            // color = color / sr;
         }
 
-        color *= res.s.weight;
+        // color *= res.s.weight;
 
         // color = abs(res.s.invPdf); // getInvPDF(res);
-        gDiffuseRadiance[pixel] = float4(color, res.s.sceneLength);
         // color = pixel.x > gFrameDim.x / 2.0 ? float(res.updated) : color;
-
-        return color; //+ (kEvalDirect ? gInitSamples[pixel1D].ns : float3(0.f));
+        return color;
+        return di; //+ (kEvalDirect ? gInitSamples[pixel1D].ns : float3(0.f));
     }
 }
 
