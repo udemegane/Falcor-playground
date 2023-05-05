@@ -33,8 +33,9 @@ using namespace Falcor;
 
 namespace
 {
+const std::string kReflectTypesFile = "RenderPasses/ReSTIRGIPass/ReflectTypes.cs.slang";
 const std::string kInitialSamplingFile = "RenderPasses/ReSTIRGIPass/PrepareReservoir.cs.slang";
-const std::string kTemporalSamplingFIle = "RenderPasses/ReSTIRGIPass/TemporalResampling.cs.slang";
+const std::string kTemporalSamplingFile = "RenderPasses/ReSTIRGIPass/TemporalResampling.cs.slang";
 const std::string kSpatialSamplingFile = "RenderPasses/ReSTIRGIPass/SpatialResampling.cs.slang";
 const std::string kFinalShadingFile = "RenderPasses/ReSTIRGIPass/EvaluateSample.cs.slang";
 const std::string kShaderModel = "6_5";
@@ -44,6 +45,11 @@ const std::string kInputMotionVector = "motionVector";
 const std::string kInputDepth = "depth";
 const std::string kInputNoise = "noiseTex";
 const std::string kInputDirectLighting = "directLighting";
+const std::string kInputDiffuseReflectance = "diffuseReflectance";
+const std::string kInputSpecularReflectance = "specularReflectance";
+
+const std::string kDiffuseReflectanceTexName = "gDiffuseReflectance";
+const std::string kSpecularReflectanceTexName = "gSpecularReflectance";
 
 const std::string kSecondaryRayLaunchProbability = "secondaryRayLaunchProbability";
 const std::string kRussianRouletteProbability = "russianRouletteProbability";
@@ -69,13 +75,17 @@ const Falcor::ChannelList kInputChannels = {
     {kInputMotionVector, "gMotionVector", "Motion Vector"},
     {kInputDepth, "gDepth", "Depth"},
     {kInputDirectLighting, "gDirectLighting", "Radiance from Direct Lighting", true},
-    {kInputNoise, "gNoiseTex", "Noise Texture"},
+    {kInputDiffuseReflectance, kDiffuseReflectanceTexName, "Diffuse Reflectance on Visibility Points", true},
+    {kInputSpecularReflectance, kSpecularReflectanceTexName, "Specular Reflectance on Visibility Points", true},
+    {kInputNoise, "gNoiseTex", "Noise Texture", true},
 };
 
 const Falcor::ChannelList kOutputChannels = {
     {"color", "gColor", "Color", true, ResourceFormat::RGBA32Float},
     {"diffuseRadianceHitDist", "gDiffuseRadiance", "", true, ResourceFormat::RGBA32Float},
+    {"diffuseReflectance", "gDiffuseReflectance", "", true, ResourceFormat::RGBA32Float},
     {"specularRadianceHitDist", "gSpecularRadiance", "", true, ResourceFormat::RGBA32Float},
+    {"specularReflectance", "gSpecularReflectance", "", true, ResourceFormat::RGBA32Float},
 };
 
 } // namespace
@@ -91,7 +101,7 @@ ReSTIRGIPass::ReSTIRGIPass(std::shared_ptr<Device> pDevice, const Dictionary& di
     mEngine.seed(seed_gen());
 
     parseDictionary(dict);
-    mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_DEFAULT);
+    mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_TINY_UNIFORM);
     if (!mpDevice->isFeatureSupported(Device::SupportedFeatures::RaytracingTier1_1))
         logError("Inline Raytracing is not supported on this device.");
 }
@@ -209,6 +219,7 @@ void ReSTIRGIPass::setScene(RenderContext* pRenderContext, const Scene::SharedPt
 {
     mFrameCount = 0;
     mpScene = pScene;
+    mpReflectTypes = nullptr;
     mpInitialSamplingPass = nullptr;
     mpTemporalResamplingPass = nullptr;
     mpSpatialResamplingPass = nullptr;
@@ -235,9 +246,54 @@ void ReSTIRGIPass::execute(RenderContext* pRenderContext, const RenderData& rend
         mOptionsChanged = false;
     }
 
+    bool lightingChanged = false;
+
     if (mpScene->getRenderSettings().useEmissiveLights)
     {
         mpScene->getLightCollection(pRenderContext);
+    }
+
+    if (is_set(mpScene->getUpdates(), Scene::UpdateFlags::RenderSettingsChanged))
+    {
+        lightingChanged = true;
+    }
+
+    if (mpScene->useEmissiveLights())
+    {
+        if (!mpEmissiveLightSampler)
+        {
+            const auto& pLights = mpScene->getLightCollection(pRenderContext);
+            FALCOR_ASSERT(pLights && pLights->getActiveLightCount(pRenderContext) > 0);
+            FALCOR_ASSERT(!mpEmissiveLightSampler);
+            mpEmissiveLightSampler = LightBVHSampler::create(pRenderContext, mpScene);
+            lightingChanged = true;
+        }
+    }
+    else
+    {
+        mpEmissiveLightSampler = nullptr;
+        lightingChanged = true;
+        // TODO
+    }
+
+    if (mpScene->useEnvLight())
+    {
+        if (!mpEnvMapSampler)
+        {
+            mpEnvMapSampler = EnvMapSampler::create(mpDevice, mpScene->getEnvMap());
+            lightingChanged = true;
+            //
+        }
+    }
+    else
+    {
+        mpEnvMapSampler = nullptr;
+        lightingChanged = true;
+        // TODO
+    }
+    if (mpEmissiveLightSampler)
+    {
+        mpEmissiveLightSampler->update(pRenderContext);
     }
 
     const auto& pVBuffer = renderData.getTexture(kInputVBuffer);
@@ -248,13 +304,13 @@ void ReSTIRGIPass::execute(RenderContext* pRenderContext, const RenderData& rend
     FALCOR_ASSERT(pNoise);
     mNoiseDim = {pNoise.get()->getHeight(), pNoise.get()->getWidth()};
 
+    prepareResources(pRenderContext, renderData);
     initialSampling(pRenderContext, renderData, pVBuffer, pDepth, pMVec, pNoise);
     //    temporalResampling(pRenderContext, renderData, pMVec, pNoise);
     //    spatialResampling(pRenderContext, renderData, pNoise);
     finalShading(pRenderContext, renderData, pVBuffer, pDepth, pNoise);
     endFrame();
     // renderData holds the requested resources
-    // auto& pTexture = renderData.getTexture("src");
 }
 
 Program::DefineList ReSTIRGIPass::getStaticDefines()
@@ -263,9 +319,9 @@ Program::DefineList ReSTIRGIPass::getStaticDefines()
     defines.add("P_RR", std::to_string(mStaticParams.mRussianRouletteProbability));
     defines.add("P_SECONDARY_RR", std::to_string(mStaticParams.mSecondaryRayLaunchProbability));
     defines.add("USE_IMPORTANCE_SAMPLING", mStaticParams.mUseImportanceSampling ? "1" : "0");
-    defines.add("USE_ENVLIGHT", mStaticParams.mUseEnvLight ? "1" : "0");
-    defines.add("USE_EMISSIVE_LIGHTS", mStaticParams.mUseEmissiveLights ? "1" : "0");
-    defines.add("USE_ANALYTIC_LIGHTS", mStaticParams.mUseAnalyticsLights ? "1" : "0");
+    defines.add("USE_ENVLIGHT", mpScene->useEnvLight() ? "1" : "0");
+    defines.add("USE_EMISSIVE_LIGHTS", mpScene->useEmissiveLights() ? "1" : "0");
+    defines.add("USE_ANALYTIC_LIGHTS", mpScene->useAnalyticLights() ? "1" : "0");
     defines.add("USE_INFINITE_BOUNCES", mStaticParams.mUseInfiniteBounces ? "1" : "0");
     defines.add("MAX_BOUNCES", std::to_string(mStaticParams.mMaxBounces));
 
@@ -281,7 +337,45 @@ Program::DefineList ReSTIRGIPass::getStaticDefines()
     defines.add("EVAL_DIRECT", mStaticParams.mEvalDirect ? "1" : "0");
     defines.add("SHOW_VISIBILITY_POINT_LI", mStaticParams.mShowVisibilityPointLi ? "1" : "0");
     defines.add("DEBUG_SPLIT_VIEW", mStaticParams.mSplitView ? "1" : "0");
+    if (mpEmissiveLightSampler)
+        defines.add(mpEmissiveLightSampler->getDefines());
+    // if (mpScene)
+    //     defines.add(mpScene->getSceneDefines());
     return defines;
+}
+
+void ReSTIRGIPass::prepareResources(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    if (!mpReflectTypes)
+    {
+        Program::Desc desc;
+        desc.addShaderModules(mpScene->getShaderModules());
+        desc.addTypeConformances(mpScene->getMaterialSystem()->getTypeConformances());
+        desc.addShaderLibrary(kReflectTypesFile).setShaderModel(kShaderModel).csEntry("main");
+
+        auto defines = mpScene->getSceneDefines();
+        defines.add(getStaticDefines());
+        mpReflectTypes = ComputePass::create(mpDevice, desc, defines, true);
+    }
+    FALCOR_ASSERT(mpReflectTypes);
+    mpReflectTypes->getProgram()->addDefines(getStaticDefines());
+    auto rootVar = mpReflectTypes->getRootVar();
+
+    if (!mpParamsBlock)
+    {
+        auto reflector = mpReflectTypes->getProgram()->getReflector()->getParameterBlock("params");
+        mpParamsBlock = ParameterBlock::create(mpDevice.get(), reflector);
+        FALCOR_ASSERT(mpParamsBlock);
+    }
+
+    {
+        auto var = mpParamsBlock->getRootVar();
+
+        if (mpEmissiveLightSampler)
+            mpEmissiveLightSampler->setShaderData(var["emissiveSampler"]);
+        if (mpEnvMapSampler)
+            mpEnvMapSampler->setShaderData(var["envMapSampler"]);
+    }
 }
 
 void ReSTIRGIPass::initialSampling(
@@ -311,8 +405,6 @@ void ReSTIRGIPass::initialSampling(
     }
     FALCOR_ASSERT(mpInitialSamplingPass);
     mpInitialSamplingPass->getProgram()->addDefines(getStaticDefines());
-    //    mpInitialSamplingPass->getProgram()->addDefine("USE_TEMPORAL_RESAMPLING","1");
-    //    mpInitialSamplingPass->getProgram()->addDefine("USE_INFINITE_BOUNCES","1");
 
     auto var = mpInitialSamplingPass->getRootVar();
 
@@ -365,7 +457,23 @@ void ReSTIRGIPass::initialSampling(
     var["CB"]["gNoiseTexDim"] = mNoiseDim;
     var["CB"]["gRandUint"] = mEngine();
 
+    FALCOR_ASSERT(mpParamsBlock);
+    var["params"] = mpParamsBlock;
+
+    {
+        auto paramsVar = var["params"];
+
+        if (mpScene->useEmissiveLights())
+            FALCOR_ASSERT(mpEmissiveLightSampler);
+
+        if (mpEmissiveLightSampler)
+            mpEmissiveLightSampler->setShaderData(paramsVar["emissiveSampler"]);
+        if (mpEnvMapSampler)
+            mpEnvMapSampler->setShaderData(paramsVar["envMapSampler"]);
+    }
+
     mpSampleGenerator->setShaderData(var);
+
     mpScene->setRaytracingShaderData(pRenderContext, var);
     mpInitialSamplingPass->execute(pRenderContext, {mFrameDim, 1u});
 }
@@ -382,7 +490,7 @@ void ReSTIRGIPass::initialSampling(
 //     {
 //         Program::Desc desc;
 //         desc.addShaderModules(mpScene->getShaderModules());
-//         desc.addShaderLibrary(kTemporalSamplingFIle).setShaderModel(kShaderModel).csEntry("main");
+//         desc.addShaderLibrary(kTemporalSamplingFile).setShaderModel(kShaderModel).csEntry("main");
 //         desc.addTypeConformances(mpScene->getTypeConformances());
 //
 //         auto defines = mpScene->getSceneDefines();
@@ -518,8 +626,18 @@ void ReSTIRGIPass::finalShading(
     };
     for (const auto& channel : kOutputChannels)
         bind(channel);
+    const auto& pDiffuseReflectance = renderData.getTexture(kInputDiffuseReflectance);
+    const auto& pSpecularReflectance = renderData.getTexture(kInputSpecularReflectance);
+    if (pDiffuseReflectance)
+        var[kDiffuseReflectanceTexName] = pDiffuseReflectance;
+    if (pSpecularReflectance)
+        var[kSpecularReflectanceTexName] = pSpecularReflectance;
 
     mpSampleGenerator->setShaderData(var);
+    //    if(mpEmissiveLightSampler)
+    //        mpEmissiveLightSampler->setShaderData(var);
+    //    if(mpEnvMapSampler)
+    //        mpEnvMapSampler->setShaderData(var);
     mpScene->setRaytracingShaderData(pRenderContext, var);
 
     mpFinalShadingPass->execute(pRenderContext, {mFrameDim, 1u});

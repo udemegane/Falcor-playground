@@ -64,6 +64,8 @@ private:
 
     Program::DefineList getStaticDefines();
 
+    void prepareResources(RenderContext* pRenderContext, const RenderData& renderData);
+
     void initialSampling(
         RenderContext* pRenderContext,
         const RenderData& renderData,
@@ -94,6 +96,7 @@ private:
 
     Scene::SharedPtr mpScene;
 
+    ComputePass::SharedPtr mpReflectTypes;
     ComputePass::SharedPtr mpInitialSamplingPass;
     ComputePass::SharedPtr mpTemporalResamplingPass;
     ComputePass::SharedPtr mpSpatialResamplingPass;
@@ -145,6 +148,7 @@ private:
         bool mShowVisibilityPointLi = false;
         bool mSplitView = false;
     } mStaticParams;
+    ParameterBlock::SharedPtr mpParamsBlock;
 
     uint2 mFrameDim = uint2(0, 0);
     uint2 mNoiseDim = uint2(0, 0);

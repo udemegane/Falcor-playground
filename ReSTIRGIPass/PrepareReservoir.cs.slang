@@ -3,8 +3,6 @@
 import Scene.Scene;
 import Utils.Attributes;
 import Utils.Color.ColorHelpers;
-// import Scene.Shading;
-// import Scene.Material.ShadingUtils;
 import Utils.Math.MathHelpers;
 import Utils.Geometry.GeometryHelpers;
 import Utils.Sampling.SampleGenerator;
@@ -18,6 +16,7 @@ import RaytracingUtils;
 import GIReservoir;
 import StaticParams;
 import LoadShadingData;
+import Params;
 
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float> gDepth;
@@ -32,6 +31,9 @@ RWStructuredBuffer<GIReservoir> gIntermediateReservoirs;
 
 // RWStructuredBuffer<GISample> gInitSamples;
 // RWTexture2D<float3> gThroughput;
+
+//
+ParameterBlock<Params> params;
 
 static const float kRayMax = 1e30f;
 
@@ -89,9 +91,6 @@ struct LightSampler
     EmissiveLightSampler emmisiveSampler;
     EnvMapSampler envmapSampler;
 }
-
-// EmissiveLightSampler emmisiveSampler;
-// EnvMapSampler envmapSampler;
 
 float4 extractNoise(uint2 pixel, uint time, uint seed)
 {
@@ -674,6 +673,9 @@ void sampling(uint2 pixel, uint2 screen)
             color += evalDirectAnalytic(sd, mi, sg);
         }
 
+        TriangleLightSample tls;
+        params.emissiveSampler.sampleLight(sd.posW, sd.N, true, sg, tls);
+        // params.test();
         if (kUseReferencePathTracer)
         {
             // Reference PathTracer

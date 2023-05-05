@@ -5,10 +5,12 @@ target_sources(ReSTIRGIPass PRIVATE
     ReSTIRGIPass.h
     EvaluateSample.cs.slang
     PrepareReservoir.cs.slang
+    ReflectTypes.cs.slang
     GIReservoir.slang
     StaticParams.slang
     RaytracingUtils.slang
     LoadShadingData.slang
+    Params.slang
 )
 
 target_copy_shaders(ReSTIRGIPass RenderPasses/ReSTIRGIPass)
