@@ -203,6 +203,7 @@ void ReSTIRGIPass::parseDictionary(const Dictionary& dict)
 
 void ReSTIRGIPass::compile(RenderContext* pRenderContext, const CompileData& compileData)
 {
+    RenderPass::compile(pRenderContext, compileData);
     mFrameDim = compileData.defaultTexDims;
 }
 
