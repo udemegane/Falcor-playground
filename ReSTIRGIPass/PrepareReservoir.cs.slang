@@ -138,7 +138,7 @@ bool selectLightType(out uint lightType, out float pdf, float rand)
     return false;
 }
 
-bool generateAnalyticLightsSample(const ShadingData sd, inout LightSample ls, inout SampleGenerator sg)
+bool generateAnalyticLightsSample<S : ISampleGenerator>(const ShadingData sd, inout LightSample ls, inout S sg)
 {
     ls = {};
     uint lightCount = gScene.getLightCount();
@@ -149,28 +149,23 @@ bool generateAnalyticLightsSample(const ShadingData sd, inout LightSample ls, in
     AnalyticLightSample als;
     if (!sampleLight(sd.posW, gScene.getLight(lightIndex), sg, als))
         return false;
-    ls.Li = als.Li * invPdf;
-    ls.pdf = als.pdf / invPdf;
+    ls.Li = als.Li;
+    ls.pdf = 1.0f / invPdf;
     ls.origin = computeRayOrigin(sd.posW, dot(sd.faceN, als.dir) >= 0.f ? sd.faceN : -sd.faceN);
     ls.distance = als.distance;
     ls.dir = als.dir;
+    ls.lightType = (uint)GenericLightType::Analytic;
 
     return any(ls.Li > 0.f);
 }
 
-bool generateEmissiveLightsSample(
-    const ShadingData sd,
-    const bool upperHemisphere,
-    inout LightSample ls,
-    inout EmissiveLightSampler sampler,
-    inout SampleGenerator sg
-)
+bool generateEmissiveLightsSample<S : ISampleGenerator>(const ShadingData sd, const bool upperHemisphere, inout LightSample ls, inout S sg)
 {
     ls = {};
     if (!kUseEmissiveLights)
         return false;
     TriangleLightSample tls;
-    if (!sampler.sampleLight(sd.posW, sd.N, upperHemisphere, sg, tls))
+    if (!params.emissiveSampler.sampleLight(sd.posW, sd.N, upperHemisphere, sg, tls))
         return false;
     ls.Li = tls.pdf > 0.f ? tls.Le / tls.pdf : float3(0.f);
     ls.pdf = tls.pdf;
@@ -178,36 +173,31 @@ bool generateEmissiveLightsSample(
     float3 toLight = tls.posW - sd.posW;
     ls.distance = length(toLight);
     ls.dir = normalize(toLight);
+    ls.lightType = (uint)GenericLightType::Emissive;
 
     return any(ls.Li > 0.f);
 }
 
-bool generateEnvLightSample(const ShadingData sd, inout LightSample ls, inout EnvMapSampler sampler, inout SampleGenerator sg)
+bool generateEnvLightSample<S : ISampleGenerator>(const ShadingData sd, inout LightSample ls, inout S sg)
 {
     ls = {};
     if (!kUseEnvLight)
         return false;
     EnvMapSample lightSample;
-    if (!sampler.sample(sampleNext2D(sg), lightSample))
+    if (!params.envMapSampler.sample(sampleNext2D(sg), lightSample))
         return false;
     ls.Li = lightSample.pdf > 0.f ? lightSample.Le / lightSample.pdf : float3(0.f);
     ls.pdf = lightSample.pdf;
     ls.origin = computeRayOrigin(sd.posW, dot(sd.faceN, lightSample.dir) >= 0.f ? sd.faceN : -sd.faceN);
     ls.dir = lightSample.dir;
     ls.distance = FLT_MAX;
+    ls.lightType = (uint)GenericLightType::EnvMap;
 
     return any(ls.Li > 0.f);
 }
 
-bool generateLightSample(
-    const ShadingData sd,
-    const uint lobeTypes,
-    inout LightSample ls,
-    inout LightSampler sampler,
-    inout SampleGenerator sg
-)
+bool generateLightSample<S : ISampleGenerator>(const ShadingData sd, const uint lobeTypes, inout LightSample ls, inout S sg)
 {
-    LightSample ls = {};
     uint lightType;
     float selectionPdf;
     if (!selectLightType(lightType, selectionPdf, sampleNext1D(sg)))
@@ -220,10 +210,10 @@ bool generateLightSample(
     switch (lightType)
     {
     case (uint)GenericLightType::EnvMap:
-        valid = generateEnvLightSample(sd, ls, sampler.envmapSampler, sg);
+        valid = generateEnvLightSample(sd, ls, sg);
         break;
     case (uint)GenericLightType::Emissive:
-        valid = generateEmissiveLightsSample(sd, hasReflection && !hasTransmission, ls, sampler.emmisiveSampler, sg);
+        valid = generateEmissiveLightsSample(sd, hasReflection && !hasTransmission, ls, sg);
         break;
     case (uint)GenericLightType::Analytic:
         valid = generateAnalyticLightsSample(sd, ls, sg);
@@ -250,6 +240,23 @@ bool generateLightSample(
     {
         return false;
     }
+}
+
+float3 evalDirectLighting<S : ISampleGenerator>(const ShadingData sd, const IMaterialInstance mi, inout S sg)
+{
+    const uint lobeTypes = mi.getLobeTypes(sd);
+    LightSample ls;
+    if (!generateLightSample(sd, lobeTypes, ls, sg))
+        return float3(0.f);
+
+    const float3 n = max(sd.N, sd.faceN);
+    const float3 origin = computeRayOrigin(sd.posW, dot(n, ls.dir) >= 0.f ? n : -n);
+
+    Ray ray = Ray(origin, ls.dir, 0.0f, ls.distance);
+    if (!traceVisibilityRay(ray))
+        return float3(0.0f);
+
+    return (mi.eval(sd, ls.dir, sg) * ls.Li / (ls.pdf + DBL_EPSILON));
 }
 
 /** TODO: add support env light and mesh light.
@@ -361,8 +368,7 @@ bool handleHit(const HitInfo hit, const float hitT, inout ScatterRayData rayData
         return false;
     }
     //
-    rayData.radiance += rayData.throughput * evalDirectAnalytic(sd, mi, rayData.sg);
-
+    rayData.radiance += rayData.throughput * evalDirectLighting(sd, mi, rayData.sg);
     // add length
     float3 rayOrigin = hit.getType() == HitType::Curve ? sd.posW - sd.curveRadius * sd.N : sd.computeNewRayOrigin();
     float invPdf;
@@ -545,7 +551,7 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
         ShadingData samplePointSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
         let SamplePointMi = gScene.materials.getMaterialInstance(samplePointSd, lod);
         rayData.radiance +=
-            (evalDirectAnalytic(samplePointSd, SamplePointMi, rayData.sg) + SamplePointMi.getProperties(samplePointSd).emission);
+            (evalDirectLighting(samplePointSd, SamplePointMi, rayData.sg) + SamplePointMi.getProperties(samplePointSd).emission);
         float3 rayOrigin = hit.getType() == HitType::Curve
                                ? samplePointSd.posW - samplePointSd.curveRadius * samplePointSd.N
                                : samplePointSd.computeNewRayOrigin(!(mi.getLobeTypes(samplePointSd) & (uint)LobeType::Transmission));
@@ -667,15 +673,21 @@ void sampling(uint2 pixel, uint2 screen)
 
         // compute Direct Lighting
         // TODO: replace ReSTIR
-        if (kEvalDirect)
+        if (false)
         {
             color += (mi.getProperties(sd).emission);
-            color += evalDirectAnalytic(sd, mi, sg);
+            color += evalDirectLighting(sd, mi, sg);
         }
 
-        TriangleLightSample tls;
-        params.emissiveSampler.sampleLight(sd.posW, sd.N, true, sg, tls);
-        // params.test();
+        // TriangleLightSample tls;
+        // params.emissiveSampler.sampleLight(sd.posW, sd.N, true, sg, tls);
+        // EnvMapSample ems;
+        // params.envMapSampler.sample(sampleNext2D(sg), ems);
+        // LightSample ls;
+        // ScatterRayData test = ScatterRayData(sg);
+
+        // evalDirectLighting(sd, mi, test.sg);
+        // generateLightSample(sd, mi.getLobeTypes(sd), ls, sg);
         if (kUseReferencePathTracer)
         {
             // Reference PathTracer

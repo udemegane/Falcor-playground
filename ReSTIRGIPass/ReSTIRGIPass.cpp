@@ -465,9 +465,11 @@ void ReSTIRGIPass::initialSampling(
 
         if (mpScene->useEmissiveLights())
             FALCOR_ASSERT(mpEmissiveLightSampler);
-
         if (mpEmissiveLightSampler)
             mpEmissiveLightSampler->setShaderData(paramsVar["emissiveSampler"]);
+
+        if (mpScene->useEnvLight())
+            FALCOR_ASSERT(mpEnvMapSampler);
         if (mpEnvMapSampler)
             mpEnvMapSampler->setShaderData(paramsVar["envMapSampler"]);
     }

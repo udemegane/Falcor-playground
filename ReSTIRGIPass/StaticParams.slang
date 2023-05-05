@@ -6,9 +6,9 @@ static const float prrSecondry = P_SECONDARY_RR;
 static const float invPrrSecondry = 1.0 / prrSecondry;
 static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
 static const uint kMaxBounces = MAX_BOUNCES;
-static const bool kUseEnvLight = true;
-static const bool kUseEmissiveLights = true;
-static const bool kUseAnalyticLights = true;
+static const bool kUseEnvLight = USE_ENVLIGHT;
+static const bool kUseEmissiveLights = USE_EMISSIVE_LIGHTS;
+static const bool kUseAnalyticLights = USE_ANALYTIC_LIGHTS;
 
 // Temporal Resampling
 static const bool kUseTemporalResampling = USE_TEMPORAL_RESAMPLING;
