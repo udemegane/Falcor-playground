@@ -38,7 +38,6 @@ struct GIReservoir
         M = 0;
         updated = false;
         ps = 0.f;
-        W = 0.f;
     }
 
     // [mutating] bool update(const GISample si, const float wi, const float u)
