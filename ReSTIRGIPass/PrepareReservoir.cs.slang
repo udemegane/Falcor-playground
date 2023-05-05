@@ -35,8 +35,6 @@ RWStructuredBuffer<GIReservoir> gIntermediateReservoirs;
 //
 ParameterBlock<Params> params;
 
-static const float kRayMax = 1e30f;
-
 cbuffer CB
 {
     uint gFrameCount;

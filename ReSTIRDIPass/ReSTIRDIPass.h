@@ -35,7 +35,6 @@
 #include "Rendering/Lights/EnvMapSampler.h"
 #include "Rendering/Utils/PixelStats.h"
 
-
 using namespace Falcor;
 
 class ReSTIRDIPass : public RenderPass
@@ -62,27 +61,47 @@ public:
     virtual bool onKeyEvent(const KeyboardEvent& keyEvent) override { return false; }
 
 private:
-    ReSTIRDIPass(std::shared_ptr<Device> pDevice) : RenderPass(std::move(pDevice));
+    ReSTIRDIPass(std::shared_ptr<Device> pDevice, const Dictionary& dict);
     void parseDictionary(const Dictionary& dict);
-    void traceRay(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr pVBuffer, const Texture::SharedPtr pDepth);
-    void initialSampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr pVBuffer, const Texture::SharedPtr pDepth);
-    void spatioTemporalResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr pVBuffer, const Texture::SharedPtr pDepth);
+    void prepareResources(RenderContext* pRenderContext, const RenderData& renderData);
+    Program::DefineList getDefines();
+
+    void prepareReservoir(
+        RenderContext* pRenderContext,
+        const RenderData& renderData,
+        const Texture::SharedPtr& vBuffer,
+        const Texture::SharedPtr& depth,
+        const Texture::SharedPtr& viewW,
+        const Texture::SharedPtr& motionVector
+    );
+
+    void finalShading(
+        RenderContext* pRenderContext,
+        const RenderData& renderData,
+        const Texture::SharedPtr& vBuffer,
+        const Texture::SharedPtr& depth,
+        const Texture::SharedPtr& viewW
+    );
+
+    void endFrame(RenderContext* pRenderContext, const RenderData& renderData);
 
     Scene::SharedPtr mpScene;
     SampleGenerator::SharedPtr mpSampleGenerator;
     EnvMapSampler::SharedPtr mpEnvMapSampler;
     EmissiveLightSampler::SharedPtr mpEmissiveSampler;
     PixelStats::SharedPtr mpPixelStats;
-    PixelDebug::SharedPtr  mpPixelDebug;
+    PixelDebug::SharedPtr mpPixelDebug;
+    ParameterBlock::SharedPtr mpParamsBlock;
 
+    ComputePass::SharedPtr mpReflectTypes;
     ComputePass::SharedPtr mpTracePass;
-    ComputePass::SharedPtr mpInitialSampling;
-    ComputePass::SharedPtr mpSpatioTemporalResampling;
+    ComputePass::SharedPtr mpSpatialResampling;
 
-    Buffer::SharedPtr mpPrevFrameReservoir;
+    Buffer::SharedPtr mpTemporalReservoir;
     Buffer::SharedPtr mpIntermediateReservoir;
 
-    struct{
+    struct
+    {
         uint mRISSampleNums = 8;
         uint mTemporalReuseMaxM = 20;
         bool mAutoSetMaxM = true;
@@ -93,13 +112,7 @@ private:
         uint mSpatialNeighbors = 4;
     } mStaticParams;
 
-
     uint2 mFrameDim = uint2(0, 0);
     uint mFrameCount = 0;
     bool mOptionsChanged = false;
-
-
-
-
-
 };

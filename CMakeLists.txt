@@ -4,6 +4,6 @@
 # add_subdirectory(ReSTIR)
 # add_subdirectory(TinyPathTracer)
 # add_subdirectory(VisibilityRenderPass)
-# add_subdirectory(ReSTIRDIPass)
+add_subdirectory(ReSTIRDIPass)
 add_subdirectory(ReSTIRGIPass)
 add_subdirectory(WireframePass)
