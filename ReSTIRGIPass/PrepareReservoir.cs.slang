@@ -20,8 +20,6 @@ import Params;
 
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float> gDepth;
-// Texture2D<float3> gNormal;
-// Texture2D<float3> gPositionW;
 Texture2D<float4> gNoise;
 Texture2D<float2> gMotionVector;
 
@@ -82,20 +80,6 @@ struct LightSample
     float distance;
     float3 dir;
     uint lightType;
-}
-
-struct LightSampler
-{
-    EmissiveLightSampler emmisiveSampler;
-    EnvMapSampler envmapSampler;
-}
-
-float4 extractNoise(uint2 pixel, uint time, uint seed)
-{
-    uint x = ((seed % pixel.x) + pixel.x + time) % gNoiseTexDim.x;
-    uint y = ((seed % pixel.y) + pixel.y + time) % gNoiseTexDim.y;
-    float4 u4 = gNoise[uint2(x, y)];
-    return gNoise[uint2(gNoiseTexDim.x * u4.x, gNoiseTexDim.y * u4.y)];
 }
 
 int2 getPrevPixel(float3 pos, Camera camera)
@@ -366,7 +350,7 @@ bool handleHit(const HitInfo hit, const float hitT, inout ScatterRayData rayData
         return false;
     }
     //
-    rayData.radiance += rayData.throughput * evalDirectLighting(sd, mi, rayData.sg);
+    rayData.radiance += rayData.throughput * evalDirectAnalytic(sd, mi, rayData.sg);
     // add length
     float3 rayOrigin = hit.getType() == HitType::Curve ? sd.posW - sd.curveRadius * sd.N : sd.computeNewRayOrigin();
     float invPdf;
@@ -411,11 +395,12 @@ void pathTrace(inout ScatterRayData rayData)
                 rayData.throughput *= invPrr;
             }
             else
-                break;
+            {
+            }
         }
         else
         {
-            // rayData.radiance += gScene.envMap.eval(rayData.direction);
+            rayData.radiance += rayData.throughput * gScene.envMap.eval(rayData.direction);
             rayData.terminated = true;
             break;
         }
@@ -471,8 +456,8 @@ bool prepareInitialSampleRay(
 
         if (isCurveHit)
             rayData.origin = sd.posW - sd.curveRadius * sd.N;
-        else if (hasTransmission)
-            rayData.origin = sd.computeNewRayOrigin(false);
+        // else if (hasTransmission)
+        //     rayData.origin = sd.computeNewRayOrigin(false);
         else
             rayData.origin = sd.computeNewRayOrigin();
         rayData.direction = randomDir;
@@ -541,7 +526,8 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
     float hitT;
     // Init ray throughput weight for spatial resampling.
     const float3 weight = rayData.throughput;
-    if (traceRayInline(ray, hit, hitT))
+    traceRayInline(ray, hit, hitT);
+    if (hit.isValid())
     {
         // Compute Indirect radiance
         rayData.sceneLength += hitT;
@@ -549,7 +535,7 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
         ShadingData samplePointSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
         let SamplePointMi = gScene.materials.getMaterialInstance(samplePointSd, lod);
         rayData.radiance +=
-            (evalDirectLighting(samplePointSd, SamplePointMi, rayData.sg) + SamplePointMi.getProperties(samplePointSd).emission);
+            (evalDirectAnalytic(samplePointSd, SamplePointMi, rayData.sg) + SamplePointMi.getProperties(samplePointSd).emission);
         float3 rayOrigin = hit.getType() == HitType::Curve
                                ? samplePointSd.posW - samplePointSd.curveRadius * samplePointSd.N
                                : samplePointSd.computeNewRayOrigin(!(mi.getLobeTypes(samplePointSd) & (uint)LobeType::Transmission));
@@ -597,7 +583,10 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
         sample.xv = sd.posW;
         sample.nv = max(sd.N, sd.faceN);
         sample.weight = weight;
-        // sample.Lo = gScene.envMap.eval(rayData.direction);
+        sample.Lo = weight * gScene.envMap.eval(rayData.direction);
+        sample.xs = sd.posW + rayData.direction * kRayMax;
+        sample.invPdf = M_2_PI;
+        sample.ns = normalize(-rayData.direction);
         return sample;
     }
 }
@@ -653,8 +642,6 @@ void temporalResampling(const uint2 pixel, const float3 pos, const GISample s, i
 
 void sampling(uint2 pixel, uint2 screen)
 {
-    // uint2 noiseSeed = {(pixel.x+gFrameCount)%gNoiseTexDim.x, pixel.y%gNoiseTexDim.y};
-    // float3 randVec = gNoise[noiseSeed].xyz;
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
     float3 color = float3(0.f);
     const bool computeDirect = true;
@@ -668,22 +655,6 @@ void sampling(uint2 pixel, uint2 screen)
         let lod = ExplicitLodTextureSampler(0.f);
         ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
         let mi = gScene.materials.getMaterialInstance(sd, lod);
-
-        // compute Direct Lighting
-        // TODO: replace ReSTIR
-        if (false)
-        {
-            color += (mi.getProperties(sd).emission);
-            color += evalDirectLighting(sd, mi, sg);
-        }
-
-        // TriangleLightSample tls;
-        // params.emissiveSampler.sampleLight(sd.posW, sd.N, true, sg, tls);
-        // EnvMapSample ems;
-        // params.envMapSampler.sample(sampleNext2D(sg), ems);
-        // LightSample ls;
-        // ScatterRayData test = ScatterRayData(sg);
-
         // evalDirectLighting(sd, mi, test.sg);
         // generateLightSample(sd, mi.getLobeTypes(sd), ls, sg);
         if (kUseReferencePathTracer)
@@ -711,8 +682,12 @@ void sampling(uint2 pixel, uint2 screen)
     else
     {
         GISample s = GISample();
-        // s.ns = gScene.envMap.eval(primaryRayDir);
-        // gInitSamples[pixel.x + screen.x * pixel.y] = s;
+        s.Lo = gScene.envMap.eval(primaryRayDir);
+        s.sceneLength = 0.f;
+        s.weight = 0.f;
+        GIReservoir r = GIReservoir();
+        updateReservoir(r, s, luminance(s.Lo), 0.0f);
+        gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y] = r;
         // color += float3(0.0f, 0.0, 0.f);
     }
 }

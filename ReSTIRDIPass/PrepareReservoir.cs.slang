@@ -270,7 +270,7 @@ void temporalResampling<S : ISampleGenerator>(const uint2 pixel, const float3 po
         if (filter)
         {
             Reservoir prevR = Reservoir.unpack(gTemporalReservoir[prevFramePix1D]);
-            current.merge(prevR, prevR.targetPdfSample, sampleNext1D(sg));
+            current.merge(prevR, sampleNext1D(sg));
             if (current.M > kTemporalMax)
             {
                 current.wSum *= (float)kTemporalMax / current.M;
@@ -308,7 +308,6 @@ void sampling(uint2 pixel, uint2 screen)
         s.length = kRayMax;
         s.Li = kUseEnvLight ? gScene.envMap.eval(primaryRayDir) : float3(0.0f);
         r.update(s, HLF_EPSILON, HLF_EPSILON, 0.0f);
-        // color = kUseEnvLight ? gScene.envMap.eval(primaryRayDir) : float3(0.0f);
     }
 }
 

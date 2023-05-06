@@ -11,7 +11,7 @@ import Utils.Sampling.SampleGenerator;
 import Rendering.Lights.LightHelpers;
 import RaytracingUtils;
 import GIReservoir;
-import StaticParams;
+import RenderPasses.ReSTIRGIPass.StaticParams;
 import LoadShadingData;
 
 Texture2D<PackedHitInfo> gVBuffer;
@@ -33,6 +33,7 @@ cbuffer CB
     uint2 gFrameDim;
     uint2 gNoiseTexDim;
     uint gRandUint;
+    bool readyReflectance;
 }
 
 float4 extractNoise(uint2 pixel, uint seed, bool flag)
@@ -193,29 +194,7 @@ float3 evalDirectAnalytic(const ShadingData sd, const IMaterialInstance mi, inou
 
 float3 finalShading(uint2 pixel, GIReservoir res, inout SampleGenerator sg)
 {
-    // TODO: implement this.
-    // outColor = DirectLighting + sample.Lo*throughput
-
     uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
-    // return gThroughput[pixel] * gFinalReservoirs[pixel1D].s.Lo; //* gFinalReservoirs[pixel1D].getInvPDF();
-    // let res = gFinalReservoirs[pixel1D];
-    // return (res.wSum + 0.0000000001) / (res.ps + 0.0000000001);
-    // float accept = res.updated;
-    // return accept;
-
-    // if (kDebugSplitView)
-    // {
-    //     float3 estimated = pixel.x < gFrameDim.x / 2 ? res.s.Lo * getInvPDF(res) : gInitSamples[pixel1D].Lo;
-
-    //     if (kShowVisibilityPointLi)
-    //         return estimated;
-    //     estimated *= pixel.x < gFrameDim.x / 2 ? res.s.weight : gInitSamples[pixel1D].weight;
-    //     if (kEvalDirect)
-    //         return estimated + gInitSamples[pixel1D].ns;
-    //     else
-    //         return estimated;
-    // }
-    // else
     {
         float3 color = res.s.Lo * getInvPDF(res);
         float3 di = 0.f;
@@ -237,20 +216,34 @@ float3 finalShading(uint2 pixel, GIReservoir res, inout SampleGenerator sg)
 
             color *= res.s.weight;
             // color += di;
+            if (readyReflectance)
+            {
+                float3 diffuseRadiance = color / gDiffuseReflectance[pixel].xyz;
+                gDiffuseRadiance[pixel] = float4(diffuseRadiance, res.s.sceneLength);
 
-            float3 diffuceReflectance =
-                (max(0.01f, mi.getProperties(sd).diffuseReflectionAlbedo + mi.getProperties(sd).specularTransmissionAlbedo));
-            float3 diffuseRadiance = color / diffuceReflectance;
-            gDiffuseRadiance[pixel] = float4(diffuseRadiance, res.s.sceneLength);
-            gDiffuseReflectance[pixel] = float4(diffuceReflectance, 1.0f);
+                float3 specularRadiance = color / max(0.01f, gSpecularReflectance[pixel].xyz);
+                gSpecularRadiance[pixel] = float4(specularRadiance, res.s.sceneLength);
+            }
+            else
+            {
+                float3 diffuceReflectance =
+                    (max(0.01f, mi.getProperties(sd).diffuseReflectionAlbedo + mi.getProperties(sd).specularTransmissionAlbedo));
+                float3 diffuseRadiance = color / diffuceReflectance;
+                gDiffuseRadiance[pixel] = float4(diffuseRadiance, res.s.sceneLength);
+                gDiffuseReflectance[pixel] = float4(diffuceReflectance, 1.0f);
 
-            const float NdotV = saturate(dot(mi.getProperties(sd).guideNormal, sd.V));
-            const float ggxAlpha = mi.getProperties(sd).roughness * mi.getProperties(sd).roughness;
-            float3 sr = approxSpecularIntegralGGX(mi.getProperties(sd).specularReflectionAlbedo, ggxAlpha, NdotV);
-            float3 specularRadiance = color / max(0.01f, sr);
-            gSpecularRadiance[pixel] = float4(specularRadiance, res.s.sceneLength);
-            gSpecularReflectance[pixel] = float4(sr, 1.0f);
+                const float NdotV = saturate(dot(mi.getProperties(sd).guideNormal, sd.V));
+                const float ggxAlpha = mi.getProperties(sd).roughness * mi.getProperties(sd).roughness;
+                float3 sr = approxSpecularIntegralGGX(mi.getProperties(sd).specularReflectionAlbedo, ggxAlpha, NdotV);
+                float3 specularRadiance = color / max(0.01f, sr);
+                gSpecularRadiance[pixel] = float4(specularRadiance, res.s.sceneLength);
+                gSpecularReflectance[pixel] = float4(sr, 1.0f);
+            }
+
             // color = color / sr;
+        }
+        else
+        {
         }
 
         // color *= res.s.weight;

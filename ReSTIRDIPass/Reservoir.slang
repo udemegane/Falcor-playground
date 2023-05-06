@@ -65,10 +65,19 @@ struct Reservoir
     }
 
     [mutating]
+    bool merge(const in Reservoir ri, const float u)
+    {
+        uint M1 = this.M;
+        bool accept = update(ri.s, ri.wSum, ri.targetPdfSample, u);
+        this.M = M1 + ri.M;
+        return accept;
+    }
+
+    [mutating]
     bool merge(const in Reservoir ri, const float pi, const float u)
     {
         uint M1 = this.M;
-        float fixedW = ri.wSum * (targetPdfSample) / (ri.targetPdfSample);
+        float fixedW = ri.wSum * (pi) / (ri.targetPdfSample);
         bool accept = update(ri.s, fixedW, pi, u);
         this.M = M1 + ri.M;
         return accept;

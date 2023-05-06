@@ -635,6 +635,8 @@ void ReSTIRGIPass::finalShading(
         var[kDiffuseReflectanceTexName] = pDiffuseReflectance;
     if (pSpecularReflectance)
         var[kSpecularReflectanceTexName] = pSpecularReflectance;
+    // mpFinalShadingPass->getProgram()->addDefine("READY_REFLECTANCE", pDiffuseReflectance && pSpecularReflectance ? "1" : "0");
+    var["CB"]["readyReflectance"] = pDiffuseReflectance && pSpecularReflectance;
 
     mpSampleGenerator->setShaderData(var);
     //    if(mpEmissiveLightSampler)

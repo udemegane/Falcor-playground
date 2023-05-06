@@ -10,7 +10,7 @@ import Rendering.Materials.IsotropicGGX;
 import Utils.Sampling.SampleGenerator;
 import Rendering.Lights.LightHelpers;
 import RenderPasses.ReSTIRDIPass.RaytracingUtils;
-import RenderPasses.ReSTIRDIPass.Reservoir;
+import Reservoir;
 import RenderPasses.ReSTIRDIPass.StaticParams;
 import RenderPasses.ReSTIRDIPass.LoadShadingData;
 

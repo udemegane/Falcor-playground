@@ -96,6 +96,4 @@ void setVisibilityPoint(inout GIReservoir r, const GISample dst)
 {
     r.s.xv = dst.xv;
     r.s.nv = dst.nv;
-    // r.s.weight = dst.weight;
-    // r.s.invPdf = dst.invPdf;
 }
