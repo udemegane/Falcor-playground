@@ -26,13 +26,20 @@ RWTexture2D<float4> gDiffuseReflectance;
 RWTexture2D<float4> gSpecularRadiance;
 RWTexture2D<float4> gSpecularReflectance;
 
-RWStructuredBuffer<Reservoir> gIntermediateReservoir;
+RWStructuredBuffer<PackedReservoir> gIntermediateReservoir;
 
 cbuffer CB
 {
     uint gFrameCount;
     uint2 gFrameDim;
     bool isValidViewW;
+}
+
+enum class GenericLightType
+{
+    EnvMap,
+    Emissive,
+    Analytic
 }
 
 float3 getPrimaryRayDir(uint2 pixel, uint2 screen, const Camera camera)
@@ -44,6 +51,42 @@ float3 getPrimaryRayDir(uint2 pixel, uint2 screen, const Camera camera)
     else
     {
         return camera.computeRayPinhole(pixel, screen).dir;
+    }
+}
+
+Reservoir spatialResampling(uint2 pixel, inout SampleGenerator sg)
+{
+    uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
+    if (false)
+    {
+        // TODO: Spatial Resampling
+        return Reservoir();
+    }
+    else
+    {
+        Reservoir r = Reservoir.unpack(gIntermediateReservoir[pixel1D]);
+        return r;
+    }
+}
+
+float3 recalculateLighting<S : ISampleGenerator>(const Sample s, const ShadingData sd, const IMaterialInstance mi, inout S sg)
+{
+    if (s.type == (uint)GenericLightType::Analytic)
+    {
+        AnalyticLightSample ls;
+        if (!sampleLight(sd.posW, gScene.getLight(s.currentSampleId), sg, ls))
+            return float3(0.f);
+    }
+    else if (s.type == (uint)GenericLightType::Emissive)
+    {
+        // if()
+    }
+    else if (s.type == (uint)GenericLightType::EnvMap)
+    {
+    }
+    else
+    {
+        return float3(0.f);
     }
 }
 
@@ -87,4 +130,6 @@ void main(uint3 groupId: SV_GroupID, uint3 groupThreadId: SV_GroupThreadID, uint
     uint2 pixel = dispatchThreadId.xy;
     if (any(pixel >= gFrameDim))
         return;
+    SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
+    float3 color = finalShading(pixel, spatialResampling(pixel, sg), sg);
 }
