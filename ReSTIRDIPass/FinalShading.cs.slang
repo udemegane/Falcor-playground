@@ -9,10 +9,10 @@ import Rendering.Materials.IsotropicGGX;
 
 import Utils.Sampling.SampleGenerator;
 import Rendering.Lights.LightHelpers;
-import RaytracingUtils;
-import Reservoir;
-import StaticParams;
-import LoadShadingData;
+import RenderPasses.ReSTIRDIPass.RaytracingUtils;
+import RenderPasses.ReSTIRDIPass.Reservoir;
+import RenderPasses.ReSTIRDIPass.StaticParams;
+import RenderPasses.ReSTIRDIPass.LoadShadingData;
 
 // #define is_valid(name) (is_valid_##name != 0)
 
@@ -71,23 +71,12 @@ Reservoir spatialResampling(uint2 pixel, inout SampleGenerator sg)
 
 float3 recalculateLighting<S : ISampleGenerator>(const Sample s, const ShadingData sd, const IMaterialInstance mi, inout S sg)
 {
-    if (s.type == (uint)GenericLightType::Analytic)
-    {
-        AnalyticLightSample ls;
-        if (!sampleLight(sd.posW, gScene.getLight(s.currentSampleId), sg, ls))
-            return float3(0.f);
-    }
-    else if (s.type == (uint)GenericLightType::Emissive)
-    {
-        // if()
-    }
-    else if (s.type == (uint)GenericLightType::EnvMap)
-    {
-    }
-    else
-    {
+    const float3 n = max(sd.N, sd.faceN);
+    const float3 origin = computeRayOrigin(sd.posW, dot(n, s.dir) >= 0.f ? n : -n);
+    Ray ray = Ray(origin, s.dir, 0.f, s.length);
+    if (!traceVisibilityRay(ray))
         return float3(0.f);
-    }
+    return mi.eval(sd, s.dir, sg) * s.Li;
 }
 
 float3 finalShading<S : ISampleGenerator>(uint2 pixel, Reservoir res, inout S sg)
@@ -102,11 +91,18 @@ float3 finalShading<S : ISampleGenerator>(uint2 pixel, Reservoir res, inout S sg
         let lod = ExplicitLodTextureSampler(0.f);
         ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
         let mi = gScene.materials.getMaterialInstance(sd, lod);
-
+        color = recalculateLighting(res.s, sd, mi, sg) * res.getInvPDF() + mi.getProperties(sd).emission;
         demodulate(pixel, sd, mi, color);
+        return color;
     }
     else
     {
+        color = gScene.envMap.eval(res.s.dir);
+        gDiffuseRadiance[pixel] = float4(color, 1.f);
+        gSpecularRadiance[pixel] = float4(0.f);
+        gDiffuseReflectance[pixel] = float4(1.0f);
+        gSpecularRadiance[pixel] = float4(0.f);
+        return color;
     }
 }
 
@@ -132,4 +128,5 @@ void main(uint3 groupId: SV_GroupID, uint3 groupThreadId: SV_GroupThreadID, uint
         return;
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
     float3 color = finalShading(pixel, spatialResampling(pixel, sg), sg);
+    gColor[pixel] = float4(color, 1.0f);
 }

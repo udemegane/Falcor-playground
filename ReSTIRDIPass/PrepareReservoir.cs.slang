@@ -12,10 +12,10 @@ import Rendering.Lights.EmissiveLightSampler;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
 import Rendering.Lights.LightHelpers;
 
-import Reservoir;
-import StaticParams;
-import LoadShadingData;
-import Params;
+import RenderPasses.ReSTIRDIPass.Reservoir;
+import RenderPasses.ReSTIRDIPass.LoadShadingData;
+import RenderPasses.ReSTIRDIPass.Params;
+import RenderPasses.ReSTIRDIPass.StaticParams;
 
 // #define is_valid(name) (is_valid_##name != 0)
 
@@ -45,12 +45,10 @@ enum class GenericLightType
 struct LightSample
 {
     float3 Li;
-    float pdf;
+    float invPdf;
     float3 origin;
     float distance;
     float3 dir;
-    uint lightType;
-    uint id;
 }
 
 float3 getPrimaryRayDir(uint2 pixel, uint2 screen, const Camera camera)
@@ -79,7 +77,7 @@ bool selectLightType(out uint lightType, out float pdf, float rand)
 
     p[0] = kUseEnvLight ? 1.f : 0.f;
     p[1] = kUseEmissiveLights ? 1.f : 0.f;
-    p[2] = kUseAnalyticLights ? 1.f : 0.f;
+    p[2] = kUseAnalyticLights ? 3.f : 0.f;
 
     float sum = p[0] + p[1] + p[2];
     if (sum != 0.f)
@@ -114,13 +112,15 @@ bool generateAnalyticLightsSample<S : ISampleGenerator>(const ShadingData sd, in
     AnalyticLightSample als;
     if (!sampleLight(sd.posW, gScene.getLight(lightIndex), sg, als))
         return false;
-    ls.Li = als.Li * invPdf;
-    ls.pdf = als.pdf / invPdf;
+    ls.Li = als.Li;
+    // ls.Li = als.Li * invPdf;
+    ls.invPdf = invPdf;
+    // ls.invPdf = invPdf / (als.pdf + DBL_EPSILON);
     ls.origin = computeRayOrigin(sd.posW, dot(sd.faceN, als.dir) >= 0.f ? sd.faceN : -sd.faceN);
     ls.distance = als.distance;
     ls.dir = als.dir;
-    ls.lightType = (uint)GenericLightType::Analytic;
-    ls.id = lightIndex;
+    // ls.lightType = (uint)GenericLightType::Analytic;
+    // ls.id = lightIndex;
 
     return any(ls.Li > 0.f);
 }
@@ -135,13 +135,13 @@ bool generateEmissiveLightsSample<S : ISampleGenerator>(const ShadingData sd, co
         return false;
 
     ls.Li = tls.pdf > 0.f ? tls.Le / tls.pdf : float3(0.f);
-    ls.pdf = tls.pdf;
+    ls.invPdf = 1.0f / (tls.pdf + DBL_EPSILON);
     ls.origin = computeRayOrigin(sd.posW, dot(sd.faceN, tls.dir) >= 0.f ? sd.faceN : -sd.faceN);
     float3 toLight = tls.posW - sd.posW;
     ls.distance = length(toLight);
     ls.dir = normalize(toLight);
-    ls.lightType = (uint)GenericLightType::Emissive;
-    ls.id = tls.triangleIndex;
+    // ls.lightType = (uint)GenericLightType::Emissive;
+    // ls.id = tls.triangleIndex;
 
     return any(ls.Li > 0.f);
 }
@@ -155,11 +155,11 @@ bool generateEnvLightSample<S : ISampleGenerator>(const ShadingData sd, inout Li
     if (!params.envMapSampler.sample(sampleNext2D(sg), lightSample))
         return false;
     ls.Li = lightSample.pdf > 0.f ? lightSample.Le / lightSample.pdf : float3(0.f);
-    ls.pdf = lightSample.pdf;
+    ls.invPdf = 1.0f / lightSample.pdf;
     ls.origin = computeRayOrigin(sd.posW, dot(sd.faceN, lightSample.dir) >= 0.f ? sd.faceN : -sd.faceN);
     ls.dir = lightSample.dir;
     ls.distance = FLT_MAX;
-    ls.lightType = (uint)GenericLightType::EnvMap;
+    // ls.lightType = (uint)GenericLightType::EnvMap;
 
     return any(ls.Li > 0.f);
 }
@@ -198,8 +198,8 @@ bool generateLightSample<S : ISampleGenerator>(const ShadingData sd, const uint 
         // Reject Sample when light come from upper-hemisphere to Non-reflective material
         if (dot(ls.dir, max(sd.N, sd.faceN)) >= -kMinCosTheta && !hasReflection)
             return false;
-        ls.lightType = lightType;
-        ls.pdf *= selectionPdf;
+        // ls.lightType = lightType;
+        ls.invPdf /= selectionPdf;
         ls.Li /= selectionPdf;
 
         return true;
@@ -210,39 +210,47 @@ bool generateLightSample<S : ISampleGenerator>(const ShadingData sd, const uint 
     }
 }
 
-// float3 evalDirectLighting<S : ISampleGenerator>(const ShadingData sd, const IMaterialInstance mi, inout S sg)
-// {
-//     const uint lobeTypes = mi.getLobeTypes(sd);
-//     LightSample ls;
-//     if (!generateLightSample(sd, lobeTypes, ls, sg))
-//         return float3(0.f);
-
-//     const float3 n = max(sd.N, sd.faceN);
-//     const float3 origin = computeRayOrigin(sd.posW, dot(n, ls.dir) >= 0.f ? n : -n);
-
-//     Ray ray = Ray(origin, ls.dir, 0.0f, ls.distance);
-//     if (!traceVisibilityRay(ray))
-//         return float3(0.0f);
-
-//     return (mi.eval(sd, ls.dir, sg) * ls.Li / (ls.pdf + DBL_EPSILON));
-// }
-
 Reservoir wrs<S : ISampleGenerator>(const ShadingData sd, const IMaterialInstance mi, inout S sg)
 {
     Reservoir r = Reservoir();
+    const uint lightCount = gScene.getLightCount();
+
+    [unroll]
     for (uint i = 0; i < kRISSampleNums; i++)
     {
-        LightSample ls;
-        const uint lobeTypes = mi.getLobeTypes(sd);
-        float3 viewLi = DBL_EPSILON;
-        if (generateLightSample(sd, lobeTypes, ls, sg))
-            viewLi = mi.eval(sd, ls.dir, sg) * ls.Li;
-        float pi = luminance(viewLi);
-        float wi = pi / (ls.pdf + DBL_EPSILON);
-        Sample s;
-        s.currentSampleId = ls.id;
-        s.type = (uint8_t)ls.lightType;
-        r.update(s, wi, viewLi, sampleNext1D(sg));
+        if (kUseAllLightSource)
+        {
+            // This is still broken yet.
+            // TODO: Fix incorrect emissive and envmap pdf.
+            LightSample ls;
+            const uint lobeTypes = mi.getLobeTypes(sd);
+            float3 Li = DBL_EPSILON;
+
+            if (generateLightSample(sd, lobeTypes, ls, sg))
+                Li = ls.Li;
+            Sample s = Sample();
+            s.Li = Li;
+            s.dir = ls.dir;
+            s.length = ls.distance;
+            float pi = luminance(mi.eval(sd, ls.dir, sg) * Li);
+            float wi = pi * ls.invPdf;
+            r.update(s, wi, pi, sampleNext1D(sg));
+        }
+        else
+        {
+            const uint xi = min(uint(sampleNext1D(sg) * lightCount), lightCount - 1);
+            AnalyticLightSample ls;
+            float3 Li = DBL_EPSILON;
+            if (sampleLight(sd.posW, gScene.getLight(xi), sg, ls))
+                Li = ls.Li;
+            Sample s = Sample();
+            s.Li = Li;
+            s.dir = ls.dir;
+            s.length = ls.distance;
+            float pi = luminance(mi.eval(sd, ls.dir, sg) * Li);
+            float wi = pi * lightCount;
+            r.update(s, wi, pi, sampleNext1D(sg));
+        }
     }
     return r;
 }
@@ -262,7 +270,7 @@ void temporalResampling<S : ISampleGenerator>(const uint2 pixel, const float3 po
         if (filter)
         {
             Reservoir prevR = Reservoir.unpack(gTemporalReservoir[prevFramePix1D]);
-            // bool accept = current.update(prevR.s,, prevR.targetPdfSample, sampleNext1D(sg));
+            current.merge(prevR, prevR.targetPdfSample, sampleNext1D(sg));
             if (current.M > kTemporalMax)
             {
                 current.wSum *= (float)kTemporalMax / current.M;
@@ -289,22 +297,18 @@ void sampling(uint2 pixel, uint2 screen)
         ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
 
         let mi = gScene.materials.getMaterialInstance(sd, lod);
-        float3 rayOrigin;
-        if (isCurveHit)
-        {
-            // For curves, we set the new origin at the sphere center.
-            rayOrigin = sd.posW - sd.curveRadius * sd.N;
-        }
-        else
-        {
-            rayOrigin = sd.computeNewRayOrigin();
-        }
-
-        // color +=
+        Reservoir r = wrs(sd, mi, sg);
+        temporalResampling(pixel, sd.posW, r, sg);
     }
     else
     {
-        color = kUseEnvLight ? gScene.envMap.eval(primaryRayDir) : float3(0.0f);
+        Reservoir r = Reservoir();
+        Sample s = Sample();
+        s.dir = normalize(primaryRayDir);
+        s.length = kRayMax;
+        s.Li = kUseEnvLight ? gScene.envMap.eval(primaryRayDir) : float3(0.0f);
+        r.update(s, HLF_EPSILON, HLF_EPSILON, 0.0f);
+        // color = kUseEnvLight ? gScene.envMap.eval(primaryRayDir) : float3(0.0f);
     }
 }
 

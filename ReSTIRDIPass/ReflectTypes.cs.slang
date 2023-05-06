@@ -1,5 +1,5 @@
 
-import Params;
+import RenderPasses.ReSTIRDIPass.Params;
 
 ParameterBlock<Params> params;
 
