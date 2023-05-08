@@ -113,9 +113,9 @@ void demodulate(const uint2 pixel, const ShadingData sd, const IMaterialInstance
 
     const float NdotV = saturate(dot(mi.getProperties(sd).guideNormal, sd.V));
     const float ggxAlpha = mi.getProperties(sd).roughness * mi.getProperties(sd).roughness;
-    float3 specularReflectance = approxSpecularIntegralGGX(mi.getProperties(sd).specularReflectionAlbedo, ggxAlpha, NdotV);
+    float3 specularReflectance = max(0.01f, approxSpecularIntegralGGX(mi.getProperties(sd).specularReflectionAlbedo, ggxAlpha, NdotV));
     gDiffuseRadiance[pixel] = float4(color / diffuceReflectance, 1.0f);
-    gSpecularRadiance[pixel] = float4(color / max(0.01f, specularReflectance), 1.0f);
+    gSpecularRadiance[pixel] = float4(color / specularReflectance, 1.0f);
     gDiffuseReflectance[pixel] = float4(diffuceReflectance, 1.0f);
     gSpecularReflectance[pixel] = float4(specularReflectance, 1.0f);
 }

@@ -74,6 +74,8 @@ struct GIReservoir
         GIReservoir r = GIReservoir();
         r.s.Lo = p.LoSceneLength.xyz;
         r.s.sceneLength = p.LoSceneLength.w;
+        r.s.weight = p.weightInvPdf.xyz;
+        r.s.invPdf = p.weightInvPdf.w;
         r.s.xv = p.XvWSum.xyz;
         r.wSum = p.XvWSum.w;
         r.s.xs = p.XsPTarget.xyz;

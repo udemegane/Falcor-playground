@@ -23,8 +23,8 @@ Texture2D<float> gDepth;
 Texture2D<float4> gNoise;
 Texture2D<float2> gMotionVector;
 
-RWStructuredBuffer<GIReservoir> gTemporalReservoirs;
-RWStructuredBuffer<GIReservoir> gIntermediateReservoirs;
+RWStructuredBuffer<PackedGIReservoir> gTemporalReservoirs;
+RWStructuredBuffer<PackedGIReservoir> gIntermediateReservoirs;
 
 //
 ParameterBlock<Params> params;
@@ -90,7 +90,7 @@ bool selectLightType(out uint lightType, out float pdf, float rand)
 {
     float p[3];
 
-    p[0] = kUseEnvLight ? 1.f : 0.f;
+    p[0] = kUseEnvLight ? 0.05f : 0.f;
     p[1] = kUseEmissiveLights ? 1.f : 0.f;
     p[2] = kUseAnalyticLights ? 1.f : 0.f;
 
@@ -526,7 +526,7 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
     if (hit.isValid())
     {
         // Compute Indirect radiance for closest Hit.
-        rayData.sceneLength += hitT;
+        rayData.sceneLength = hitT;
         let lod = ExplicitLodTextureSampler(0.f);
         ShadingData samplePointSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
         let SamplePointMi = gScene.materials.getMaterialInstance(samplePointSd, lod);
@@ -576,7 +576,7 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
         sample.weight = weight;
         sample.invPdf = invPdf;
         // なんかデカい数字ならなんでもいい。多分。
-        sample.sceneLength = 100000.0f;
+        sample.sceneLength = HLF_MAX;
 
         return sample;
     }
@@ -602,7 +602,7 @@ void temporalResampling<S : ISampleGenerator>(const uint2 pixel, const float3 po
 
     if (kUseTemporalResampling && prevPix.x >= 0 && prevPix.y >= 0 && prevPix.x < gFrameDim.x && prevPix.y < gFrameDim.y)
     {
-        GIReservoir res = (gTemporalReservoirs[prevFramePix1D]);
+        GIReservoir res = GIReservoir.unpack(gTemporalReservoirs[prevFramePix1D]);
 
         // float depthRatio =
         //     (length(pos - gScene.camera.data.posW) + HLF_EPSILON) / (length(res.s.xv - gScene.camera.data.prevPosW) + HLF_EPSILON);
@@ -620,7 +620,7 @@ void temporalResampling<S : ISampleGenerator>(const uint2 pixel, const float3 po
         }
     }
 
-    gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y] = currentReservoir;
+    gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y] = currentReservoir.pack();
 }
 
 /** Initial Sampling
@@ -656,7 +656,7 @@ void sampling(uint2 pixel, uint2 screen)
             sample.Lo = rayData.radiance;
             GIReservoir r = GIReservoir();
             r.s = sample;
-            gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y] = r;
+            gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y] = r.pack();
         }
         else
         {
@@ -671,11 +671,11 @@ void sampling(uint2 pixel, uint2 screen)
     {
         GISample s = GISample();
         s.Lo = gScene.envMap.eval(primaryRayDir);
-        s.sceneLength = 0.f;
+        s.sceneLength = HLF_MAX;
         s.weight = 0.f;
         GIReservoir r = GIReservoir();
         updateReservoir(r, s, luminance(s.Lo), 0.0f);
-        gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y] = r;
+        gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y] = r.pack();
         // color += float3(0.0f, 0.0, 0.f);
     }
 }

@@ -19,12 +19,13 @@ Texture2D<float4> gNoise;
 Texture2D<float4> gDirectLighting;
 
 RWTexture2D<float4> gColor;
+RWTexture2D<float4> gEnvColor;
 RWTexture2D<float4> gDiffuseRadiance;
 RWTexture2D<float4> gDiffuseReflectance;
 RWTexture2D<float4> gSpecularRadiance;
 RWTexture2D<float4> gSpecularReflectance;
 
-RWStructuredBuffer<GIReservoir> gIntermediateReservoirs;
+RWStructuredBuffer<PackedGIReservoir> gIntermediateReservoirs;
 
 cbuffer CB
 {
@@ -40,7 +41,7 @@ GIReservoir spatialResampling<S : ISampleGenerator>(uint2 pixel, inout S sg)
 
     if (kUseSpatialResampling)
     {
-        GIReservoir master = (gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y]);
+        GIReservoir master = GIReservoir.unpack(gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y]);
         GISample s = master.s;
 
         const float3 origin = computeRayOrigin(s.xv, s.nv);
@@ -53,7 +54,7 @@ GIReservoir spatialResampling<S : ISampleGenerator>(uint2 pixel, inout S sg)
             uint2 neighbor = {
                 clamp(pixel.x + uint(radius * cos(angle)), 0, gFrameDim.x), clamp(pixel.y + uint(radius * sin(angle)), 0, gFrameDim.y)
             };
-            GIReservoir rn = (gIntermediateReservoirs[neighbor.x + gFrameDim.x * neighbor.y]);
+            GIReservoir rn = GIReservoir.unpack(gIntermediateReservoirs[neighbor.x + gFrameDim.x * neighbor.y]);
 
             // angle test
             if (dot(rn.s.nv, s.nv) >= 0.9)
@@ -115,7 +116,7 @@ GIReservoir spatialResampling<S : ISampleGenerator>(uint2 pixel, inout S sg)
                     return master;
                 }
             }
-            GIReservoir r = (gIntermediateReservoirs[pixel1D]);
+            GIReservoir r = GIReservoir.unpack(gIntermediateReservoirs[pixel1D]);
             return r;
         }
         else
@@ -125,7 +126,7 @@ GIReservoir spatialResampling<S : ISampleGenerator>(uint2 pixel, inout S sg)
     }
     else
     {
-        GIReservoir r = (gIntermediateReservoirs[pixel1D]);
+        GIReservoir r = GIReservoir.unpack(gIntermediateReservoirs[pixel1D]);
         return r;
     }
 }
@@ -144,6 +145,8 @@ float3 finalShading<S : ISampleGenerator>(uint2 pixel, GIReservoir res, inout S 
             let lod = ExplicitLodTextureSampler(0.f);
             ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
             let mi = gScene.materials.getMaterialInstance(sd, lod);
+            float3 emission = mi.getProperties(sd).emission;
+            gEnvColor[pixel] = float4(emission, 1.0f);
 
             float3 wo = normalize(res.s.xs - res.s.xv);
 
@@ -153,7 +156,6 @@ float3 finalShading<S : ISampleGenerator>(uint2 pixel, GIReservoir res, inout S 
             if (kReadyReflectanceData)
             {
                 color += gDirectLighting[pixel].xyz;
-
                 float3 diffuseRadiance = color / gDiffuseReflectance[pixel].xyz;
                 gDiffuseRadiance[pixel] = float4(diffuseRadiance, res.s.sceneLength);
 
@@ -178,21 +180,23 @@ float3 finalShading<S : ISampleGenerator>(uint2 pixel, GIReservoir res, inout S 
         }
         else
         {
-            if (kReadyReflectanceData)
+            if (true)
             {
                 // color += gDirectLighting[pixel].xyz;
+                gEnvColor[pixel] = float4(color, 1.0f);
                 float3 diffuseRadiance = color / gDiffuseReflectance[pixel].xyz;
                 gDiffuseRadiance[pixel] = float4(diffuseRadiance, res.s.sceneLength);
-
+                gDiffuseReflectance[pixel] = float4(color, 1.0f);
                 float3 specularRadiance = color / max(0.01f, gSpecularReflectance[pixel].xyz);
                 gSpecularRadiance[pixel] = float4(specularRadiance, res.s.sceneLength);
+                gSpecularReflectance[pixel] = float4(0.2f);
             }
             else
             {
                 gDiffuseRadiance[pixel] = float4(color, res.s.sceneLength);
                 gDiffuseReflectance[pixel] = float4(1.0f);
                 gSpecularRadiance[pixel] = float4(0.f, 0.f, 0.f, res.s.sceneLength);
-                gSpecularReflectance[pixel] = float4(DBL_EPSILON);
+                gSpecularReflectance[pixel] = float4(0.01f);
             }
         }
         return color;

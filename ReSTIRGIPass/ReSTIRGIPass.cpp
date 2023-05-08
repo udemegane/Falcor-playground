@@ -83,6 +83,7 @@ const Falcor::ChannelList kInputChannels = {
 
 const Falcor::ChannelList kOutputChannels = {
     {"color", "gColor", "Color", true, ResourceFormat::RGBA32Float},
+    {"environment", "gEnvColor", "Color", true, ResourceFormat::RGBA32Float},
     {"diffuseRadianceHitDist", "gDiffuseRadiance", "", true, ResourceFormat::RGBA32Float},
     {"diffuseReflectance", "gDiffuseReflectance", "", true, ResourceFormat::RGBA32Float},
     {"specularRadianceHitDist", "gSpecularRadiance", "", true, ResourceFormat::RGBA32Float},

@@ -264,7 +264,7 @@ void temporalResampling<S : ISampleGenerator>(const uint2 pixel, const float3 po
         prevPix = getPrevPixel(pos, gScene.camera);
     int prevFramePix1D = prevPix.x + (int)gFrameDim.x * prevPix.y;
 
-    if (false && prevPix.x >= 0 && prevPix.y >= 0 && prevPix.x < gFrameDim.x && prevPix.y < gFrameDim.y)
+    if (true && prevPix.x >= 0 && prevPix.y >= 0 && prevPix.x < gFrameDim.x && prevPix.y < gFrameDim.y)
     {
         bool filter = true;
         if (filter)
