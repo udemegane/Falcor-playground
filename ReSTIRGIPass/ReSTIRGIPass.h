@@ -62,7 +62,7 @@ private:
     ReSTIRGIPass(std::shared_ptr<Device> pDevice, const Dictionary& dict);
     void parseDictionary(const Dictionary& dict);
 
-    Program::DefineList getStaticDefines();
+    Program::DefineList getStaticDefines(const RenderData& renderData);
 
     void prepareResources(RenderContext* pRenderContext, const RenderData& renderData);
 
@@ -125,6 +125,7 @@ private:
         bool mUseImportanceSampling = true;
         uint mMaxBounces = 3;
         bool mUseInfiniteBounces = true;
+        bool mExcludeEnvMapEmissiveFromRIS = true;
 
         bool mUseEnvLight = true;
         bool mUseEmissiveLights = true;
@@ -137,9 +138,9 @@ private:
 
         // Spatial Resampling Settings
         bool mSpatialResampling = true;
-        uint mSpatialNeighborsCount = 10;
-        uint mSampleRadius = 150;
-        uint mSpatialReservoirSize = 500;
+        uint mSpatialNeighborsCount = 8;
+        uint mSampleRadius = 100;
+        uint mSpatialReservoirSize = 300;
         bool mDoVisibilityTestEachSamples = false;
         //        bool mUnbiased=false;
 

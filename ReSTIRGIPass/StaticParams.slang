@@ -1,4 +1,6 @@
 static const float kRayMax = 1e30f;
+static const bool kReadyReflectanceData = READY_REFLECTANCE;
+static const bool kUseAnalyticOnlyOnReSTIR = EXCLUDE_ENV_AND_EMISSIVE_FROM_RIS;
 
 // Initial Sampling
 static const float prr = P_RR;
@@ -22,8 +24,6 @@ static const uint kSpatialNeigborsNum = SPATIAL_NEIGHBORHOOD_COUNTS;
 static const uint kSampleRadius = SPATIAL_RESAMPLING_RADIUS;
 static const uint kSpatialMax = SPATIAL_RESERVOIR_SIZE;
 static const bool kDoVisibilityTestEverySample = DO_VISIBILITY_TEST_EACH_SAMPLES;
-
-// static const bool kReadyReflectanceData = READY_REFLECTANCE;
 
 // Debug
 static const bool kUseReferencePathTracer = false;

@@ -56,6 +56,7 @@ const std::string kRussianRouletteProbability = "russianRouletteProbability";
 const std::string kUseImportanceSampling = "useImportanceSampling";
 const std::string kUseInfiniteBounces = "useInfiniteBounces";
 const std::string kMaxBounce = "maxBounce";
+const std::string kExcludeEnvMapEmissiveFromRIS = "analyticOnly";
 
 const std::string kUseTemporalResampling = "useTemporalResampling";
 const std::string kTemporalReservoirSize = "temporalReservoirSize";
@@ -130,6 +131,7 @@ Dictionary ReSTIRGIPass::getScriptingDictionary()
     d[kEvalDirectLighting] = mStaticParams.mEvalDirect;
     d[kShowVisibilityPointLi] = mStaticParams.mShowVisibilityPointLi;
     d[kSplitView] = mStaticParams.mSplitView;
+    d[kExcludeEnvMapEmissiveFromRIS] = mStaticParams.mExcludeEnvMapEmissiveFromRIS;
 
     return d;
 }
@@ -197,6 +199,8 @@ void ReSTIRGIPass::parseDictionary(const Dictionary& dict)
         else if (k == kSplitView)
         {
             mStaticParams.mSplitView = v;
+        }else if(k==kExcludeEnvMapEmissiveFromRIS){
+            mStaticParams.mExcludeEnvMapEmissiveFromRIS = v;
         }
     }
 }
@@ -314,7 +318,7 @@ void ReSTIRGIPass::execute(RenderContext* pRenderContext, const RenderData& rend
     // renderData holds the requested resources
 }
 
-Program::DefineList ReSTIRGIPass::getStaticDefines()
+Program::DefineList ReSTIRGIPass::getStaticDefines(const RenderData& renderData)
 {
     Program::DefineList defines;
     defines.add("P_RR", std::to_string(mStaticParams.mRussianRouletteProbability));
@@ -325,6 +329,7 @@ Program::DefineList ReSTIRGIPass::getStaticDefines()
     defines.add("USE_ANALYTIC_LIGHTS", mpScene->useAnalyticLights() ? "1" : "0");
     defines.add("USE_INFINITE_BOUNCES", mStaticParams.mUseInfiniteBounces ? "1" : "0");
     defines.add("MAX_BOUNCES", std::to_string(mStaticParams.mMaxBounces));
+    defines.add("EXCLUDE_ENV_AND_EMISSIVE_FROM_RIS", mStaticParams.mExcludeEnvMapEmissiveFromRIS?"1":"0");
 
     defines.add("USE_TEMPORAL_RESAMPLING", mStaticParams.mTemporalResampling ? "1" : "0");
     defines.add("TEMPORAL_RESERVOIR_SIZE", std::to_string(mStaticParams.mTemporalReservoirSize));
@@ -338,6 +343,11 @@ Program::DefineList ReSTIRGIPass::getStaticDefines()
     defines.add("EVAL_DIRECT", mStaticParams.mEvalDirect ? "1" : "0");
     defines.add("SHOW_VISIBILITY_POINT_LI", mStaticParams.mShowVisibilityPointLi ? "1" : "0");
     defines.add("DEBUG_SPLIT_VIEW", mStaticParams.mSplitView ? "1" : "0");
+    const auto& diffuseReflectance = renderData.getTexture(kInputDiffuseReflectance);
+    const auto& specularReflectance = renderData.getTexture(kInputSpecularReflectance);
+    const auto& directLighting = renderData.getTexture(kInputDirectLighting);
+    const bool readyDirectLighting = (directLighting!= nullptr)&&(specularReflectance!=nullptr)&&(diffuseReflectance!=nullptr);
+    defines.add("READY_REFLECTANCE", readyDirectLighting ? "1" : "0");
     if (mpEmissiveLightSampler)
         defines.add(mpEmissiveLightSampler->getDefines());
     // if (mpScene)
@@ -355,11 +365,11 @@ void ReSTIRGIPass::prepareResources(RenderContext* pRenderContext, const RenderD
         desc.addShaderLibrary(kReflectTypesFile).setShaderModel(kShaderModel).csEntry("main");
 
         auto defines = mpScene->getSceneDefines();
-        defines.add(getStaticDefines());
+        defines.add(getStaticDefines(renderData));
         mpReflectTypes = ComputePass::create(mpDevice, desc, defines, true);
     }
     FALCOR_ASSERT(mpReflectTypes);
-    mpReflectTypes->getProgram()->addDefines(getStaticDefines());
+    mpReflectTypes->getProgram()->addDefines(getStaticDefines(renderData));
     auto rootVar = mpReflectTypes->getRootVar();
 
     if (!mpParamsBlock)
@@ -400,12 +410,12 @@ void ReSTIRGIPass::initialSampling(
         auto defines = mpScene->getSceneDefines();
         FALCOR_ASSERT(mpSampleGenerator);
         defines.add(mpSampleGenerator->getDefines());
-        defines.add(getStaticDefines());
+        defines.add(getStaticDefines(renderData));
 
         mpInitialSamplingPass = ComputePass::create(mpDevice, desc, defines, true);
     }
     FALCOR_ASSERT(mpInitialSamplingPass);
-    mpInitialSamplingPass->getProgram()->addDefines(getStaticDefines());
+    mpInitialSamplingPass->getProgram()->addDefines(getStaticDefines(renderData));
 
     auto var = mpInitialSamplingPass->getRootVar();
 
@@ -599,14 +609,14 @@ void ReSTIRGIPass::finalShading(
         FALCOR_ASSERT(mpSampleGenerator);
         auto defines = mpScene->getSceneDefines();
         defines.add(mpSampleGenerator->getDefines());
-        defines.add(getStaticDefines());
+        defines.add(getStaticDefines(renderData));
         defines.add(getValidResourceDefines(kOutputChannels, renderData));
 
         mpFinalShadingPass = ComputePass::create(mpDevice, desc, defines, true);
     }
 
     mpFinalShadingPass->getProgram()->addDefines(getValidResourceDefines(kOutputChannels, renderData));
-    mpFinalShadingPass->getProgram()->addDefines(getStaticDefines());
+    mpFinalShadingPass->getProgram()->addDefines(getStaticDefines(renderData));
     auto var = mpFinalShadingPass->getRootVar();
     FALCOR_ASSERT(mpSpatialReservoirs);
 
@@ -614,11 +624,16 @@ void ReSTIRGIPass::finalShading(
     var["gIntermediateReservoirs"] = mpIntermediateReservoirs;
     var["gNoise"] = pNoiseTexture;
     var["gVBuffer"] = pVBuffer;
+    var[kDiffuseReflectanceTexName] = renderData.getTexture(kInputDiffuseReflectance);
+    var[kSpecularReflectanceTexName] = renderData.getTexture(kInputSpecularReflectance);
+    var["gDirectLighting"] = renderData.getTexture(kInputDirectLighting);
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = mFrameDim;
     var["CB"]["gNoiseTexDim"] = mNoiseDim;
     var["CB"]["gRandUint"] = mEngine();
+
+
 
     var["gScene"] = mpScene->getParameterBlock();
 
@@ -629,14 +644,9 @@ void ReSTIRGIPass::finalShading(
     };
     for (const auto& channel : kOutputChannels)
         bind(channel);
-    const auto& pDiffuseReflectance = renderData.getTexture(kInputDiffuseReflectance);
-    const auto& pSpecularReflectance = renderData.getTexture(kInputSpecularReflectance);
-    if (pDiffuseReflectance)
-        var[kDiffuseReflectanceTexName] = pDiffuseReflectance;
-    if (pSpecularReflectance)
-        var[kSpecularReflectanceTexName] = pSpecularReflectance;
-    // mpFinalShadingPass->getProgram()->addDefine("READY_REFLECTANCE", pDiffuseReflectance && pSpecularReflectance ? "1" : "0");
-    var["CB"]["readyReflectance"] = pDiffuseReflectance && pSpecularReflectance;
+
+
+
 
     mpSampleGenerator->setShaderData(var);
     //    if(mpEmissiveLightSampler)
@@ -663,6 +673,8 @@ void ReSTIRGIPass::renderUI(Gui::Widgets& widget)
     dirty |= widget.checkbox("Use Infinite Bounces", mStaticParams.mUseInfiniteBounces);
     if (mStaticParams.mUseInfiniteBounces)
         dirty |= widget.var("Max Bounces", mStaticParams.mMaxBounces, 0u, 30u);
+    dirty |= widget.checkbox("Exclude EnvMap and Emissive mesh from RIS", mStaticParams.mExcludeEnvMapEmissiveFromRIS);
+
 
     if (Gui::Group temporalGroup = widget.group("Temporal Resampling", true))
     {
