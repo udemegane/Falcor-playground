@@ -1,12 +1,12 @@
 from falcor import *
 
 def render_graph_R():
-    g = RenderGraph('R')
+    g = RenderGraph('ReSTIR GI with NRD')
     GBufferRT = createPass('GBufferRT', {'outputSize': IOSize.Default, 'samplePattern': SamplePattern.Center, 'sampleCount': 16, 'useAlphaTest': True, 'adjustShadingNormals': True, 'forceCullMode': False, 'cull': CullMode.CullBack, 'texLOD': TexLODMode.Mip0, 'useTraceRayInline': False, 'useDOF': True})
     g.addPass(GBufferRT, 'GBufferRT')
     ImageLoader = createPass('ImageLoader', {'outputSize': IOSize.Default, 'filename': 'E:/Falcor/Source/RenderPasses/Falcor-playground/Data/FreeBlueNoiseTextures/Data/1024_1024/LDR_RGBA_0.png', 'mips': False, 'srgb': True, 'arrayIndex': 0, 'mipLevel': 0})
     g.addPass(ImageLoader, 'ImageLoader')
-    ReSTIRGIPass = createPass('ReSTIRGIPass', {'secondaryRayLaunchProbability': 0.20000000298023224, 'russianRouletteProbability': 0.30000001192092896, 'useImportanceSampling': True, 'useInfiniteBounces': True, 'maxBounce': 3, 'useTemporalResampling': True, 'temporalReservoirSize': 20, 'useSpatialResampling': True, 'spatialReservoirSize': 500, 'spatialResamplingRadius': 150, 'spatialNeighborsCount': 10, 'doVisibilityTestEachSamples': False, 'evalDirectLighting': True, 'showVisibilityPointLi': False, 'splitView': False})
+    ReSTIRGIPass = createPass('ReSTIRGIPass', {'secondaryRayLaunchProbability': 0.200, 'russianRouletteProbability': 0.30, 'useImportanceSampling': True, 'useInfiniteBounces': True, 'maxBounce': 3, 'useTemporalResampling': True, 'temporalReservoirSize': 20, 'useSpatialResampling': False, 'spatialReservoirSize': 100, 'spatialResamplingRadius': 150, 'spatialNeighborsCount': 4, 'doVisibilityTestEachSamples': False, 'evalDirectLighting': True, 'showVisibilityPointLi': False, 'splitView': False})
     g.addPass(ReSTIRGIPass, 'ReSTIRGIPass')
     ReSTIRDIPass = createPass('ReSTIRDIPass', {'temporalReuseMaxM': 20, 'risSampleNums': 8, 'autoSetMaxM': True, 'useReSTIR': True, 'useTemporalReuse': True, 'useSpatialReuse': True, 'spatialRadius': 5, 'spatialNeighbors': 4})
     g.addPass(ReSTIRDIPass, 'ReSTIRDIPass')
@@ -14,7 +14,7 @@ def render_graph_R():
     g.addPass(NRD, 'NRD')
     ToneMapper = createPass('ToneMapper', {'outputSize': IOSize.Default, 'useSceneMetadata': True, 'exposureCompensation': 0.0, 'autoExposure': False, 'filmSpeed': 100.0, 'whiteBalance': False, 'whitePoint': 6500.0, 'operator': ToneMapOp.Aces, 'clamp': True, 'whiteMaxLuminance': 1.0, 'whiteScale': 11.199999809265137, 'fNumber': 1.0, 'shutter': 1.0, 'exposureMode': ExposureMode.AperturePriority})
     g.addPass(ToneMapper, 'ToneMapper')
-    ModulateIllumination = createPass('ModulateIllumination', {'useEmission': False, 'useDiffuseReflectance': True, 'useDiffuseRadiance': True, 'useSpecularReflectance': True, 'useSpecularRadiance': True, 'useDeltaReflectionEmission': False, 'useDeltaReflectionReflectance': False, 'useDeltaReflectionRadiance': False, 'useDeltaTransmissionEmission': False, 'useDeltaTransmissionReflectance': False, 'useDeltaTransmissionRadiance': False, 'useResidualRadiance': False, 'outputSize': IOSize.Default})
+    ModulateIllumination = createPass('ModulateIllumination', {'useEmission': True, 'useDiffuseReflectance': True, 'useDiffuseRadiance': True, 'useSpecularReflectance': True, 'useSpecularRadiance': True, 'useDeltaReflectionEmission': False, 'useDeltaReflectionReflectance': False, 'useDeltaReflectionRadiance': False, 'useDeltaTransmissionEmission': False, 'useDeltaTransmissionReflectance': False, 'useDeltaTransmissionRadiance': False, 'useResidualRadiance': False, 'outputSize': IOSize.Default})
     g.addPass(ModulateIllumination, 'ModulateIllumination')
     g.addEdge('ImageLoader.dst', 'ReSTIRGIPass.noiseTex')
     g.addEdge('ReSTIRDIPass.specularReflectance', 'ReSTIRGIPass.specularReflectance')
