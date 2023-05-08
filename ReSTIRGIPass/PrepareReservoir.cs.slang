@@ -23,7 +23,6 @@ Texture2D<float> gDepth;
 Texture2D<float4> gNoise;
 Texture2D<float2> gMotionVector;
 
-// RWStructuredBuffer<GIReservoir> gPrevFrameReservoirs;
 RWStructuredBuffer<GIReservoir> gTemporalReservoirs;
 RWStructuredBuffer<GIReservoir> gIntermediateReservoirs;
 
@@ -456,8 +455,8 @@ bool prepareInitialSampleRay(
 
         if (isCurveHit)
             rayData.origin = sd.posW - sd.curveRadius * sd.N;
-        // else if (hasTransmission)
-        //     rayData.origin = sd.computeNewRayOrigin(false);
+        else if (hasTransmission)
+            rayData.origin = sd.computeNewRayOrigin(false);
         else
             rayData.origin = sd.computeNewRayOrigin();
         rayData.direction = randomDir;
@@ -484,7 +483,7 @@ bool prepareInitialSampleRay(
             rayData.direction = result.wo;
             // float3 weight = (mi.eval(sd, result.wo, rayData.sg) + HLF_EPSILON) / (mi.evalPdf(sd, result.wo, true) + HLF_EPSILON);
             // rayData.throughput *= weight;
-            rayData.throughput *= result.weight;
+            rayData.throughput = result.weight;
             xvInvPdf = 1.0f / (result.pdf + HLF_EPSILON);
             return any(rayData.throughput > 0.f);
         }
@@ -509,27 +508,25 @@ bool prepareInitialSampleRay(
 GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi, const bool isCurveHit, inout ScatterRayData rayData)
 {
     BSDFSample result;
-
-    // Prepare secondary ray.
     float invPdf;
+
+    // Prepare Secondary Ray
+    // When fail to make ray, retrun Null Sample;
     // Only BSDF Sampling is correct yet.
-    prepareInitialSampleRay(InitialSamplePDFType::BSDF, sd, isCurveHit, mi, rayData, invPdf);
+    if (!prepareInitialSampleRay(InitialSamplePDFType::BSDF, sd, isCurveHit, mi, rayData, invPdf))
+        return GISample();
 
-    // float3 secondaryRayOrigin = isCurveHit ? sd.posW - sd.curveRadius * sd.N : sd.computeNewRayOrigin();
-    // prepareScatterRay(sd, mi, secondaryRayOrigin, rayData, invPdf);
-
-    // prepareScatterRay(sd, mi, computeRayOrigin(sd.posW, max(sd.N, sd.faceN)), rayData, invPdf);
-
-    // Prepare and Launch ray.
+    // Launch ray.
     Ray ray = Ray(rayData.origin, rayData.direction, 0.f, kRayMax);
     HitInfo hit;
     float hitT;
     // Init ray throughput weight for spatial resampling.
     const float3 weight = rayData.throughput;
     traceRayInline(ray, hit, hitT);
+
     if (hit.isValid())
     {
-        // Compute Indirect radiance
+        // Compute Indirect radiance for closest Hit.
         rayData.sceneLength += hitT;
         let lod = ExplicitLodTextureSampler(0.f);
         ShadingData samplePointSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
@@ -542,23 +539,11 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
         float xsInvPdf;
         bool validHit = prepareScatterRay(samplePointSd, SamplePointMi, rayOrigin, rayData, xsInvPdf);
         rayData.length += rayData.terminated ? 1u : 0u;
-        // ----
-        // bool validHit = handleHit(hit, hitT, rayData);
-        // // Fetch sampling points data
-        // let lod = ExplicitLodTextureSampler(0.f);
-        // ShadingData sampledSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
 
-        // // Compute Multi-bounce indirect lighting
-        // ScatterRayData multiBounceRay = ScatterRayData(rayData.sg);
-        // prepareScatterRay(
-        //     sampledSd, gScene.materials.getMaterialInstance(sd, lod), computeRayOrigin(sampledSd.posW, max(sampledSd.N,
-        //     sampledSd.faceN)), multiBounceRay
-        // );
-
+        // Compute Multi bounce.
         if (sampleNext1D(rayData.sg) <= prrSecondry && validHit && kUseInfinitBounce)
         {
             rayData.throughput *= invPrrSecondry;
-            // rayData.throughput *= invPrrSecondry;
             pathTrace(rayData);
         }
 
@@ -579,14 +564,20 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
     }
     else
     {
+        // When Ray report invalid hit, set environment radiance as contribution.
+        // Set sample.
         GISample sample = GISample();
+        sample.Lo = gScene.envMap.eval(normalize(rayData.direction));
         sample.xv = sd.posW;
         sample.nv = max(sd.N, sd.faceN);
-        sample.weight = weight;
-        sample.Lo = weight * gScene.envMap.eval(rayData.direction);
+
         sample.xs = sd.posW + rayData.direction * kRayMax;
-        sample.invPdf = M_2_PI;
         sample.ns = normalize(-rayData.direction);
+
+        sample.weight = weight;
+        sample.invPdf = invPdf;
+        sample.sceneLength = kRayMax;
+
         return sample;
     }
 }
@@ -657,7 +648,7 @@ void sampling(uint2 pixel, uint2 screen)
         let mi = gScene.materials.getMaterialInstance(sd, lod);
         // evalDirectLighting(sd, mi, test.sg);
         // generateLightSample(sd, mi.getLobeTypes(sd), ls, sg);
-        if (kUseReferencePathTracer)
+        if (false)
         {
             // Reference PathTracer
             ScatterRayData rayData = ScatterRayData(sg);
