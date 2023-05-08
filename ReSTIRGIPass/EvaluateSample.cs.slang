@@ -186,10 +186,8 @@ float3 finalShading<S : ISampleGenerator>(uint2 pixel, GIReservoir res, inout S 
                 gEnvColor[pixel] = float4(color, 1.0f);
                 float3 diffuseRadiance = color / gDiffuseReflectance[pixel].xyz;
                 gDiffuseRadiance[pixel] = float4(diffuseRadiance, res.s.sceneLength);
-                gDiffuseReflectance[pixel] = float4(color, 1.0f);
                 float3 specularRadiance = color / max(0.01f, gSpecularReflectance[pixel].xyz);
                 gSpecularRadiance[pixel] = float4(specularRadiance, res.s.sceneLength);
-                gSpecularReflectance[pixel] = float4(0.2f);
             }
             else
             {

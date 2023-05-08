@@ -99,9 +99,9 @@ float3 finalShading<S : ISampleGenerator>(uint2 pixel, Reservoir res, inout S sg
     {
         color = gScene.envMap.eval(res.s.dir);
         gDiffuseRadiance[pixel] = float4(color, 1.f);
-        gSpecularRadiance[pixel] = float4(0.f);
+        gSpecularRadiance[pixel] = float4(0.f, 0.f, 0.f, 1.0f);
         gDiffuseReflectance[pixel] = float4(1.0f);
-        gSpecularRadiance[pixel] = float4(0.f);
+        gSpecularReflectance[pixel] = float4(0.01f);
         return color;
     }
 }

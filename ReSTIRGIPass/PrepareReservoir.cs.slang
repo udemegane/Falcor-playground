@@ -485,7 +485,7 @@ bool prepareInitialSampleRay(
             rayData.direction = result.wo;
             // float3 weight = (mi.eval(sd, result.wo, rayData.sg) + HLF_EPSILON) / (mi.evalPdf(sd, result.wo, true) + HLF_EPSILON);
             // rayData.throughput *= weight;
-            rayData.throughput = result.weight;
+            rayData.throughput *= result.weight;
             xvInvPdf = 1.0f / (result.pdf + HLF_EPSILON);
             return any(rayData.throughput > 0.f);
         }
@@ -671,7 +671,12 @@ void sampling(uint2 pixel, uint2 screen)
         {
             // Generate sample
             ScatterRayData rayData = ScatterRayData(sg);
-            GISample sample = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, rayData);
+            GISample sample = GISample();
+            if (0.0 < sampleNext1D(sg))
+            {
+                // rayData.throughput *= 2.0f;
+                sample = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, rayData);
+            }
             // Temporal Resampling
             temporalResampling(pixel, computeRayOrigin(sd.posW, -sd.faceN), sample, sg);
         }

@@ -142,7 +142,6 @@ private:
         uint mSampleRadius = 100;
         uint mSpatialReservoirSize = 100;
         bool mDoVisibilityTestEachSamples = false;
-        //        bool mUnbiased=false;
 
         // debug
         bool mEvalDirect = true;
