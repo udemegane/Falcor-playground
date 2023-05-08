@@ -34,17 +34,18 @@ cbuffer CB
     uint gRandUint;
 }
 
-GIReservoir spatialResampling(uint2 pixel, inout SampleGenerator sg)
+GIReservoir spatialResampling<S : ISampleGenerator>(uint2 pixel, inout S sg)
 {
     uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
 
     if (kUseSpatialResampling)
     {
-        GIReservoir master = gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y];
+        GIReservoir master = (gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y]);
         GISample s = master.s;
 
         const float3 origin = computeRayOrigin(s.xv, s.nv);
 
+        [unroll]
         for (uint i = 0; i < kSpatialNeigborsNum; i++)
         {
             float radius = kSampleRadius * sampleNext1D(sg);
@@ -52,7 +53,7 @@ GIReservoir spatialResampling(uint2 pixel, inout SampleGenerator sg)
             uint2 neighbor = {
                 clamp(pixel.x + uint(radius * cos(angle)), 0, gFrameDim.x), clamp(pixel.y + uint(radius * sin(angle)), 0, gFrameDim.y)
             };
-            GIReservoir rn = gIntermediateReservoirs[neighbor.x + gFrameDim.x * neighbor.y];
+            GIReservoir rn = (gIntermediateReservoirs[neighbor.x + gFrameDim.x * neighbor.y]);
 
             // angle test
             if (dot(rn.s.nv, s.nv) >= 0.9)
@@ -114,7 +115,8 @@ GIReservoir spatialResampling(uint2 pixel, inout SampleGenerator sg)
                     return master;
                 }
             }
-            return gIntermediateReservoirs[pixel1D];
+            GIReservoir r = (gIntermediateReservoirs[pixel1D]);
+            return r;
         }
         else
         {
@@ -123,11 +125,12 @@ GIReservoir spatialResampling(uint2 pixel, inout SampleGenerator sg)
     }
     else
     {
-        return gIntermediateReservoirs[pixel1D];
+        GIReservoir r = (gIntermediateReservoirs[pixel1D]);
+        return r;
     }
 }
 
-float3 finalShading(uint2 pixel, GIReservoir res, inout SampleGenerator sg)
+float3 finalShading<S : ISampleGenerator>(uint2 pixel, GIReservoir res, inout S sg)
 {
     uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
     {
@@ -208,12 +211,6 @@ void main(
     if (any(pixel >= gFrameDim))
         return;
     SampleGenerator sg = SampleGenerator(pixel, gRandUint);
-    // float3 hijack = gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y].s.debug;
     float3 finalcolor = finalShading(pixel, spatialResampling(pixel, sg), sg);
     gColor[pixel] = float4(finalcolor, 1.0f);
-    // gColor[pixel] = float4(pixel.y > gFrameDim.y / 2.0 ? hijack : finalcolor, 1.0f);
-
-    // gColor[pixel] = float4(hijack, 1.0f);
-    // float3 tile = float3(float(groupThreadId.x) / 16.f, float(groupThreadId.y) / 16.f, 0.0);
-    // gColor[pixel] = float4(tile, 1.0f);
 }

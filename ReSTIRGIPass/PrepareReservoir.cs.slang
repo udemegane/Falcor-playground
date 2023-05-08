@@ -26,9 +26,6 @@ Texture2D<float2> gMotionVector;
 RWStructuredBuffer<GIReservoir> gTemporalReservoirs;
 RWStructuredBuffer<GIReservoir> gIntermediateReservoirs;
 
-// RWStructuredBuffer<GISample> gInitSamples;
-// RWTexture2D<float3> gThroughput;
-
 //
 ParameterBlock<Params> params;
 
@@ -465,11 +462,12 @@ bool prepareInitialSampleRay(
         woDotN = (hasTransmission ? woDotN : max(woDotN, 0.f));
         rayData.throughput *= mi.eval(sd, randomDir, rayData.sg) * woDotN * xvInvPdf;
         // rayData.throughput *= (mi.getProperties(sd).diffuseReflectionAlbedo + mi.getProperties(sd).specularReflectionAlbedo) * woDotN;
+        return true;
         break;
-    case InitialSamplePDFType::CosineWeighted:
-        // TODO implement this.
-        return false;
-        break;
+    // case InitialSamplePDFType::CosineWeighted:
+    //     // TODO implement this.
+    //     return false;
+    //     break;
     case InitialSamplePDFType::BSDF:
         BSDFSample result;
         if (mi.sample(sd, rayData.sg, result, kUseImportanceSampling))
@@ -493,8 +491,9 @@ bool prepareInitialSampleRay(
             return false;
         }
         break;
+    default:
+        return false;
     }
-    return true;
 }
 
 /**
@@ -589,7 +588,7 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
     \param[in] s
 */
 
-void temporalResampling(const uint2 pixel, const float3 pos, const GISample s, inout SampleGenerator sg)
+void temporalResampling<S : ISampleGenerator>(const uint2 pixel, const float3 pos, const GISample s, inout S sg)
 {
     float u = sampleNext1D(sg);
 
@@ -603,7 +602,7 @@ void temporalResampling(const uint2 pixel, const float3 pos, const GISample s, i
 
     if (kUseTemporalResampling && prevPix.x >= 0 && prevPix.y >= 0 && prevPix.x < gFrameDim.x && prevPix.y < gFrameDim.y)
     {
-        GIReservoir res = gTemporalReservoirs[prevFramePix1D];
+        GIReservoir res = (gTemporalReservoirs[prevFramePix1D]);
 
         // float depthRatio =
         //     (length(pos - gScene.camera.data.posW) + HLF_EPSILON) / (length(res.s.xv - gScene.camera.data.prevPosW) + HLF_EPSILON);
