@@ -137,10 +137,10 @@ private:
         uint mTemporalReservoirSize = 20;
 
         // Spatial Resampling Settings
-        bool mSpatialResampling = true;
-        uint mSpatialNeighborsCount = 8;
+        bool mSpatialResampling = false;
+        uint mSpatialNeighborsCount = 4;
         uint mSampleRadius = 100;
-        uint mSpatialReservoirSize = 300;
+        uint mSpatialReservoirSize = 100;
         bool mDoVisibilityTestEachSamples = false;
         //        bool mUnbiased=false;
 

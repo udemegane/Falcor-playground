@@ -696,19 +696,19 @@ void ReSTIRGIPass::renderUI(Gui::Widgets& widget)
             dirty |= spatialGroup.checkbox("Do Visibility-test each Sample", mStaticParams.mDoVisibilityTestEachSamples);
         }
     }
-    if (auto debugGroup = widget.group("Debug Property", true))
-    {
-        dirty |= debugGroup.checkbox("Debug Split View", mStaticParams.mSplitView);
-        dirty |= debugGroup.checkbox("Eval Direct Lighting", mStaticParams.mEvalDirect);
-        if (!mStaticParams.mEvalDirect)
-        {
-            dirty |= debugGroup.checkbox("Show Visibility point in-irradiance", mStaticParams.mShowVisibilityPointLi);
-        }
-        else
-        {
-            mStaticParams.mShowVisibilityPointLi = false;
-        }
-    }
+//    if (auto debugGroup = widget.group("Debug Property", true))
+//    {
+//        dirty |= debugGroup.checkbox("Debug Split View", mStaticParams.mSplitView);
+//        dirty |= debugGroup.checkbox("Eval Direct Lighting", mStaticParams.mEvalDirect);
+//        if (!mStaticParams.mEvalDirect)
+//        {
+//            dirty |= debugGroup.checkbox("Show Visibility point in-irradiance", mStaticParams.mShowVisibilityPointLi);
+//        }
+//        else
+//        {
+//            mStaticParams.mShowVisibilityPointLi = false;
+//        }
+//    }
     if (dirty)
     {
         mOptionsChanged = true;

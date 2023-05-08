@@ -346,7 +346,11 @@ bool handleHit(const HitInfo hit, const float hitT, inout ScatterRayData rayData
         return false;
     }
     //
-    rayData.radiance += rayData.throughput * evalDirectAnalytic(sd, mi, rayData.sg);
+    if (kUseAnalyticOnlyOnReSTIR)
+        rayData.radiance += rayData.throughput * evalDirectAnalytic(sd, mi, rayData.sg);
+    else
+        rayData.radiance += rayData.throughput * evalDirectLighting(sd, mi, rayData.sg);
+
     // add length
     float3 rayOrigin = hit.getType() == HitType::Curve ? sd.posW - sd.curveRadius * sd.N : sd.computeNewRayOrigin();
     float invPdf;
@@ -530,8 +534,13 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
         let lod = ExplicitLodTextureSampler(0.f);
         ShadingData samplePointSd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
         let SamplePointMi = gScene.materials.getMaterialInstance(samplePointSd, lod);
-        rayData.radiance +=
-            (evalDirectAnalytic(samplePointSd, SamplePointMi, rayData.sg) + SamplePointMi.getProperties(samplePointSd).emission);
+        if (kUseAnalyticOnlyOnReSTIR)
+            rayData.radiance +=
+                (evalDirectAnalytic(samplePointSd, SamplePointMi, rayData.sg) + SamplePointMi.getProperties(samplePointSd).emission);
+        else
+            rayData.radiance +=
+                (evalDirectLighting(samplePointSd, SamplePointMi, rayData.sg) + SamplePointMi.getProperties(samplePointSd).emission);
+
         float3 rayOrigin = hit.getType() == HitType::Curve
                                ? samplePointSd.posW - samplePointSd.curveRadius * samplePointSd.N
                                : samplePointSd.computeNewRayOrigin(!(mi.getLobeTypes(samplePointSd) & (uint)LobeType::Transmission));
