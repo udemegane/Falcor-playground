@@ -576,7 +576,8 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
 
         sample.weight = weight;
         sample.invPdf = invPdf;
-        sample.sceneLength = kRayMax;
+        // なんかデカい数字ならなんでもいい。多分。
+        sample.sceneLength = 100000.0f;
 
         return sample;
     }
@@ -590,7 +591,7 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
 
 void temporalResampling(const uint2 pixel, const float3 pos, const GISample s, inout SampleGenerator sg)
 {
-    float u = sampleNext1D(sg); // getRandomF4(pixel, 800);
+    float u = sampleNext1D(sg);
 
     int2 prevPix = getPrevPixel(pos, gScene.camera);
     // int2 prevPixelPos = prevPix; // + int2(gFrameDim * gMotionVector[pixel].xy);
@@ -611,10 +612,7 @@ void temporalResampling(const uint2 pixel, const float3 pos, const GISample s, i
         if (filter)
         {
             bool accept = updateReservoir(res, s, luminance(s.Lo) * s.invPdf, u);
-            // mergeReservoirs(currentReservoir, res, res.ps, u);
-            //
             currentReservoir = res;
-            // currentReservoir.updated = accept;
             if (currentReservoir.M > kTemporalMax)
             {
                 currentReservoir.wSum *= (float)kTemporalMax / currentReservoir.M;
