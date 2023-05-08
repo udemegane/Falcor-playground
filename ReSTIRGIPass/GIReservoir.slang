@@ -1,16 +1,27 @@
 #include "Utils/Math/MathConstants.slangh"
+import Utils.Math.PackedFormats;
 import Utils.Color.ColorHelpers;
+
+struct PackedGIReservoir
+{
+    // 128bit x5
+    // Maybe it's too heavy?
+    float4 LoSceneLength;
+    float4 weightInvPdf;
+    float4 XvWSum;
+    float4 XsPTarget;
+    uint4 NvMNsUpdated;
+}
 struct GISample
 {
-    float3 xv;
-    float3 nv;
-    float3 xs;
-    float3 ns;
-    float3 Lo;
-    float3 weight;
-    float invPdf;
-    float sceneLength;
-    float3 debug;
+    float3 xv;         //
+    float3 nv;         //
+    float3 xs;         //
+    float3 ns;         //
+    float3 Lo;         //
+    float3 weight;     //
+    float invPdf;      //
+    float sceneLength; //
     __init()
     {
         xv = float3(0.f);
@@ -21,23 +32,59 @@ struct GISample
         weight = float3(1.f);
         invPdf = 1.f;
         sceneLength = 0.f;
-        debug = float3(0.f);
     }
 }
 
 struct GIReservoir
 {
-    GISample s;
-    float wSum;
+    GISample s; //
+    float wSum; //
     uint M;
     bool updated;
-    float ps; // Pdf(Sample)
+    float ps; // Pdf(Sample) //
     __init()
     {
         wSum = 0.f;
         M = 0;
         updated = false;
         ps = 0.f;
+    }
+
+    PackedGIReservoir pack()
+    {
+        PackedGIReservoir p;
+        p.LoSceneLength = float4(s.Lo, s.sceneLength);
+        p.weightInvPdf = float4(s.weight, s.invPdf);
+        p.XvWSum = float4(s.xv, wSum);
+        p.XsPTarget = float4(s.xs, ps);
+        uint2 packedNv = encodeNormal3x16(s.nv);
+        uint2 packedNs = encodeNormal3x16(s.ns);
+        uint tempM = M;
+        packedNv.y = (tempM << 16) | packedNv.y;
+        uint tempUpdated = updated ? 1u : 0u;
+        packedNs.y = (tempUpdated << 16) | packedNs.y;
+        p.NvMNsUpdated.x = packedNv.x;
+        p.NvMNsUpdated.y = packedNv.y;
+        p.NvMNsUpdated.z = packedNs.x;
+        p.NvMNsUpdated.w = packedNs.y;
+        return p;
+    }
+    static GIReservoir unpack(PackedGIReservoir p)
+    {
+        GIReservoir r = GIReservoir();
+        r.s.Lo = p.LoSceneLength.xyz;
+        r.s.sceneLength = p.LoSceneLength.w;
+        r.s.xv = p.XvWSum.xyz;
+        r.wSum = p.XvWSum.w;
+        r.s.xs = p.XsPTarget.xyz;
+        r.ps = p.XsPTarget.w;
+        uint bitfrag1 = p.NvMNsUpdated.y;
+        r.M = (bitfrag1 >> 16) & 0xffff;
+        uint bitfrag2 = p.NvMNsUpdated.w;
+        r.updated = ((bitfrag2 >> 16) & 0xffff) == 1u ? true : false;
+        r.s.nv = decodeNormal3x16(p.NvMNsUpdated.xy);
+        r.s.ns = decodeNormal3x16(p.NvMNsUpdated.zw);
+        return r;
     }
 
     // [mutating] bool update(const GISample si, const float wi, const float u)
