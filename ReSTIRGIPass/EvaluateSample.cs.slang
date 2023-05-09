@@ -42,7 +42,7 @@ GIReservoir spatialResampling<S : ISampleGenerator>(uint2 pixel, inout S sg)
     if (kUseSpatialResampling)
     {
         GIReservoir master = GIReservoir.unpack(gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y]);
-        GISample s = master.s;
+        const GISample s = master.s;
 
         const float3 origin = computeRayOrigin(s.xv, s.nv);
 
@@ -57,7 +57,7 @@ GIReservoir spatialResampling<S : ISampleGenerator>(uint2 pixel, inout S sg)
             GIReservoir rn = GIReservoir.unpack(gIntermediateReservoirs[neighbor.x + gFrameDim.x * neighbor.y]);
 
             // angle test
-            if (dot(rn.s.nv, s.nv) >= 0.9)
+            if (dot(rn.s.nv, s.nv) >= 0.9 && length(rn.s.xv - s.xv) < 5.0f)
             {
                 // calc jacobian
                 float3 s2v = s.xv - rn.s.xs;
@@ -66,7 +66,7 @@ GIReservoir spatialResampling<S : ISampleGenerator>(uint2 pixel, inout S sg)
                 float cos_neighbor = abs(dot(rn.s.ns, normalize(s2vNeighbor)));
                 float norm2_current = dot(s2v, s2v);
                 float norm2_neighbor = dot(s2vNeighbor, s2vNeighbor);
-                float invJ = abs((cos_neighbor * norm2_current) / (cos_current * norm2_neighbor + HLF_EPSILON));
+                float invJ = (cos_neighbor * norm2_current) / (cos_current * norm2_neighbor);
 
                 float weight = kUseTemporalResampling ? getInvPDF(rn) : 1.f;
                 float u = sampleNext1D(sg);
@@ -76,7 +76,8 @@ GIReservoir spatialResampling<S : ISampleGenerator>(uint2 pixel, inout S sg)
                     Ray ray = Ray(origin, -s2v, 0.f, length(s2v));
                     if (!traceVisibilityRay(ray))
                     {
-                        bool accept = mergeReservoirs(master, rn, luminance(rn.s.Lo) * invJ, u);
+                        // bool accept = updateReservoir(master, rn.s, rn.wSum * invJ, u);
+                        bool accept = mergeReservoirs(master, rn, luminance(rn.s.Lo), u);
                         if (accept)
                             setVisibilityPoint(master, s);
                         else
@@ -86,13 +87,13 @@ GIReservoir spatialResampling<S : ISampleGenerator>(uint2 pixel, inout S sg)
                 }
                 else
                 {
-                    // bool accept = updateReservoir(master, rn.s, luminance(rn.s.Lo) * invJ * weight, u);
-                    // rn.s.invPdf = getInvPDF(rn);
-                    bool accept = mergeReservoirs(master, rn, rn.ps * invJ, u);
+                    // bool accept = updateReservoir(master, rn.s, rn.wSum * invJ * weight, u);
+                    bool accept = updateReservoir(master, rn.s, luminance(rn.s.Lo) * weight, u);
+                    // bool accept = mergeReservoirs(master, rn, luminance(rn.s.Lo) * invJ, u);
                     if (accept)
                         setVisibilityPoint(master, s);
-                    else
-                        master.M -= rn.M;
+                    // else
+                    //     master.M -= rn.M;
 
                     master.updated = master.updated || accept;
                 }
@@ -135,7 +136,7 @@ float3 finalShading<S : ISampleGenerator>(uint2 pixel, GIReservoir res, inout S 
 {
     uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
     {
-        float3 color = res.s.Lo * getInvPDF(res);
+        float3 color = res.s.Lo * getInvPDF(res) / (res.s.invPdf + DBL_EPSILON);
         const HitInfo hit = HitInfo(gVBuffer[pixel]);
         const float3 primaryRayOrigin = gScene.camera.getPosition();
         const float3 primaryRayDir = gScene.camera.computeRayPinhole(pixel, gFrameDim).dir;
@@ -213,6 +214,12 @@ void main(
     if (any(pixel >= gFrameDim))
         return;
     SampleGenerator sg = SampleGenerator(pixel, gRandUint);
-    float3 finalcolor = finalShading(pixel, spatialResampling(pixel, sg), sg);
-    gColor[pixel] = float4(finalcolor, 1.0f);
+    GIReservoir r = spatialResampling(pixel, sg);
+    float3 finalcolor = finalShading(pixel, r, sg);
+
+    float3 groupIdVisualized = float3(float(groupId.x) / 16.0f, float(groupId.y) / 16.0f, 1.0f);
+    float3 groupThreadIdVisualized = float3(float(groupThreadId.x) / 16.0f, float(groupThreadId.y) / 16.0f, 1.0f);
+    float3 groupThreadTileVisualized = float3(groupThreadId.x / 2u, groupThreadId.y / 2u, 1.0f);
+    // float3 groupIndexVisualized = float3(float(groupIndex.x) / 16.0f, float(groupIndex.y) / 16.0f, 1.0f);
+    gColor[pixel] = float4(float3(r.updated), 1.0f);
 }

@@ -4,6 +4,7 @@ target_sources(ReSTIRGIPass PRIVATE
     ReSTIRGIPass.cpp
     ReSTIRGIPass.h
     EvaluateSample.cs.slang
+    TemporalResampling.cs.slang
     PrepareReservoir.cs.slang
     ReflectTypes.cs.slang
     GIReservoir.slang

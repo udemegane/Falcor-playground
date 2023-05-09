@@ -12,6 +12,14 @@ struct PackedGIReservoir
     float4 XsPTarget;
     uint4 NvMNsUpdated;
 }
+
+// struct PackedGISample
+// {
+//     float4 LoSceneLenght;
+//     float4 weightInvPdf;
+
+// }
+
 struct GISample
 {
     float3 xv;         //
@@ -122,11 +130,11 @@ float getInvPDF(const in GIReservoir r)
 bool updateReservoir(inout GIReservoir r, const in GISample si, const float wi, const float u)
 {
     r.wSum += wi;
-    bool accept = u <= (wi + HLF_EPSILON) / (r.wSum + HLF_EPSILON);
+    bool accept = u <= (wi) / (r.wSum);
     if (accept || r.M == 0)
     {
         r.s = si;
-        r.ps = luminance(si.Lo) * si.invPdf;
+        r.ps = luminance(si.Lo);
     }
     r.M++;
     return accept;
@@ -145,4 +153,5 @@ void setVisibilityPoint(inout GIReservoir r, const GISample dst)
 {
     r.s.xv = dst.xv;
     r.s.nv = dst.nv;
+    r.s.weight = dst.weight;
 }

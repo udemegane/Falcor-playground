@@ -76,12 +76,7 @@ private:
     );
 
     // Move temporal algorithm into initialSampling
-    //    void temporalResampling(
-    //        RenderContext* pRenderContext,
-    //        const RenderData& renderData,
-    //        const Texture::SharedPtr& pMotionVector,
-    //        const Texture::SharedPtr& pNoiseTexture
-    //    );
+    void temporalResampling(RenderContext* pRenderContext, const RenderData& renderData);
 
     // Move spatial algorithm into FinalShading
     //    void spatialResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pNoiseTexture);

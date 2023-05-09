@@ -508,7 +508,13 @@ bool prepareInitialSampleRay(
     \return GISample
 */
 
-GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi, const bool isCurveHit, inout ScatterRayData rayData)
+bool generateInitialSample(
+    const ShadingData sd,
+    const IMaterialInstance mi,
+    const bool isCurveHit,
+    inout ScatterRayData rayData,
+    inout GISample sample
+)
 {
     BSDFSample result;
     float invPdf;
@@ -517,7 +523,7 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
     // When fail to make ray, retrun Null Sample;
     // Only BSDF Sampling is correct yet.
     if (!prepareInitialSampleRay(InitialSamplePDFType::BSDF, sd, isCurveHit, mi, rayData, invPdf))
-        return GISample();
+        return false; // GISample();
 
     // Launch ray.
     Ray ray = Ray(rayData.origin, rayData.direction, 0.f, kRayMax);
@@ -556,7 +562,6 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
         }
 
         // Set sample.
-        GISample sample = GISample();
         sample.Lo = rayData.radiance;
         sample.xv = sd.posW;
         sample.nv = max(sd.N, sd.faceN);
@@ -568,13 +573,12 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
         sample.invPdf = invPdf;
         sample.sceneLength = rayData.sceneLength;
 
-        return sample;
+        return true;
     }
     else
     {
         // When Ray report invalid hit, set environment radiance as contribution.
         // Set sample.
-        GISample sample = GISample();
         sample.Lo = gScene.envMap.eval(normalize(rayData.direction));
         sample.xv = sd.posW;
         sample.nv = max(sd.N, sd.faceN);
@@ -587,7 +591,7 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
         // なんかデカい数字ならなんでもいい。多分。
         sample.sceneLength = HLF_MAX;
 
-        return sample;
+        return true;
     }
 }
 
@@ -597,7 +601,7 @@ GISample generateInitialSample(const ShadingData sd, const IMaterialInstance mi,
     \param[in] s
 */
 
-void temporalResampling<S : ISampleGenerator>(const uint2 pixel, const float3 pos, const GISample s, inout S sg)
+void temporalResampling<S : ISampleGenerator>(const uint2 pixel, const float3 pos, const GISample s, const bool isSkipping, inout S sg)
 {
     float u = sampleNext1D(sg);
 
@@ -637,7 +641,9 @@ void temporalResampling<S : ISampleGenerator>(const uint2 pixel, const float3 po
     \param[in] screen
  */
 
-void sampling(uint2 pixel, uint2 screen)
+// groupshared GISample r[64];
+
+void sampling(uint2 pixel, uint2 screen, uint3 groupThreadId)
 {
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
     float3 color = float3(0.f);
@@ -671,14 +677,30 @@ void sampling(uint2 pixel, uint2 screen)
         {
             // Generate sample
             ScatterRayData rayData = ScatterRayData(sg);
+
             GISample sample = GISample();
-            if (0.0 < sampleNext1D(sg))
+            bool isSkipping = (gFrameCount + pixel.x + pixel.y) % 2 == 0;
+            uint batchId = gFrameCount % 4;
+            bool mod2x = pixel.x % 2 == 1u;
+            bool mod2y = pixel.y % 2 == 1u;
+            bool calculationFlag = (batchId == 0 && 0 == mod2x && 0 == mod2y) || (batchId == 1 && 1 == mod2x && 0 == mod2y) ||
+                                   (batchId == 2 && 0 == mod2x && 1 == mod2y) || (batchId == 3 && 1 == mod2x && 1 == mod2y);
+
+            if (calculationFlag)
             {
-                // rayData.throughput *= 2.0f;
-                sample = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, rayData);
             }
+
+            bool isValid = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, rayData, sample);
+            GIReservoir r = GIReservoir();
+            updateReservoir(r, sample, luminance(sample.Lo) * sample.invPdf, 0.f);
+            gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y] = r.pack();
+            return;
+
+            // r[(groupThreadId.x / 2u) + 8 * (groupThreadId.y / 2u)] = sample;
+            // GroupMemoryBarrierWithGroupSync();
+            // sample = r[(groupThreadId.x / 2u) + 8 * (groupThreadId.y / 2u)];
             // Temporal Resampling
-            temporalResampling(pixel, computeRayOrigin(sd.posW, -sd.faceN), sample, sg);
+            // temporalResampling(pixel, computeRayOrigin(sd.posW, -sd.faceN), sample, isSkipping, sg);
         }
     }
     else
@@ -702,5 +724,5 @@ void main(uint3 groupId: SV_GroupID, uint3 groupThreadId: SV_GroupThreadID, uint
     uint2 pixel = dispatchThreadId.xy;
     if (any(pixel >= gFrameDim))
         return;
-    sampling(pixel, gFrameDim);
+    sampling(pixel, gFrameDim, groupThreadId);
 }

@@ -233,7 +233,8 @@ void ReSTIRGIPass::setScene(RenderContext* pRenderContext, const Scene::SharedPt
     mpSpatialResamplingPass = nullptr;
     mpFinalShadingPass = nullptr;
     if (mpScene)
-    {}
+    {
+    }
 }
 
 void ReSTIRGIPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
@@ -421,22 +422,6 @@ void ReSTIRGIPass::initialSampling(
 
     auto var = mpInitialSamplingPass->getRootVar();
 
-    //    if (!mpInitialSamples)
-    //    {
-    //        uint32_t frameDim1D = mFrameDim.x * mFrameDim.y;
-    //        mpInitialSamples = Buffer::createStructured(
-    //            mpDevice.get(), var["gInitSamples"], frameDim1D, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
-    //            Buffer::CpuAccess::None, nullptr, false
-    //        );
-    //    }
-    // if (!mpPrimaryThroughput)
-    // {
-    //     mpPrimaryThroughput = Texture::create2D(
-    //         mpDevice.get(), (uint32_t)mFrameDim.x, (uint32_t)mFrameDim.y, ResourceFormat::RGBA32Float, 1, 1, nullptr,
-    //         ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
-    //     );
-    // }
-
     if (!mpTemporalReservoirs)
     {
         uint32_t reservoirCounts = mFrameDim.x * mFrameDim.y;
@@ -493,51 +478,46 @@ void ReSTIRGIPass::initialSampling(
     mpInitialSamplingPass->execute(pRenderContext, {mFrameDim, 1u});
 }
 
-// void ReSTIRGIPass::temporalResampling(
-//     RenderContext* pRenderContext,
-//     const RenderData& renderData,
-//     const Texture::SharedPtr& pMotionVector,
-//     const Texture::SharedPtr& pNoiseTexture
-//)
-//{
-//     FALCOR_ASSERT(pMotionVector);
-//     if (!mpTemporalResamplingPass)
-//     {
-//         Program::Desc desc;
-//         desc.addShaderModules(mpScene->getShaderModules());
-//         desc.addShaderLibrary(kTemporalSamplingFile).setShaderModel(kShaderModel).csEntry("main");
-//         desc.addTypeConformances(mpScene->getTypeConformances());
-//
-//         auto defines = mpScene->getSceneDefines();
-//         defines.add(mpSampleGenerator->getDefines());
-//         mpTemporalResamplingPass = ComputePass::create(mpDevice, desc, defines, true);
-//     }
-//     FALCOR_ASSERT(mpTemporalResamplingPass);
-//     auto var = mpTemporalResamplingPass->getRootVar();
-//
-//     if (!mpTemporalReservoirs)
-//     {
-//         uint32_t reservoirCounts = mFrameDim.x * mFrameDim.y;
-//         mpTemporalReservoirs = Buffer::createStructured(
-//             mpDevice.get(), var["gTemporalReservoirs"], reservoirCounts, ResourceBindFlags::ShaderResource |
-//             ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
-//         );
-//     }
-//     FALCOR_ASSERT(mpInitialSamples);
-//     var["initSamples"] = mpInitialSamples;
-//     var["gTemporalReservoirs"] = mpTemporalReservoirs;
-//     var["gMotionVector"] = pMotionVector;
-//     var["gNoise"] = pNoiseTexture;
-//
-//     var["CB"]["gFrameCount"] = mFrameCount;
-//     var["CB"]["gFrameDim"] = mFrameDim;
-//     var["CB"]["gNoiseTexDim"] = mNoiseDim;
-//
-//
-//     var["gScene"] = mpScene->getParameterBlock();
-//     mpSampleGenerator->setShaderData(var);
-//     mpTemporalResamplingPass->execute(pRenderContext, {mFrameDim, 1u});
-// }
+void ReSTIRGIPass::temporalResampling(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    FALCOR_ASSERT(pMotionVector);
+    if (!mpTemporalResamplingPass)
+    {
+        Program::Desc desc;
+        desc.addShaderModules(mpScene->getShaderModules());
+        desc.addShaderLibrary(kTemporalSamplingFile).setShaderModel(kShaderModel).csEntry("main");
+        desc.addTypeConformances(mpScene->getTypeConformances());
+
+        auto defines = mpScene->getSceneDefines();
+        defines.add(mpSampleGenerator->getDefines());
+        defines.add(getStaticDefines(renderData));
+        mpTemporalResamplingPass = ComputePass::create(mpDevice, desc, defines, true);
+    }
+    FALCOR_ASSERT(mpTemporalResamplingPass);
+    mpTemporalResamplingPass->getProgram()->addDefines(getStaticDefines(renderData));
+    auto var = mpTemporalResamplingPass->getRootVar();
+
+    if (!mpIntermediateReservoirs)
+    {
+        uint32_t reservoirCounts = mFrameDim.x * mFrameDim.y;
+        mpIntermediateReservoirs = Buffer::createStructured(
+            mpDevice.get(), var["gIntermediateReservoirs"], reservoirCounts,
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+        );
+    }
+
+    var["gTemporalReservoirs"] = mpTemporalReservoirs;
+    var["gIntermediateReservoirs"] = mpIntermediateReservoirs;
+    var["gMotionVector"] = renderData.getTexture(kInputMotionVector);
+
+    var["CB"]["gFrameCount"] = mFrameCount;
+    var["CB"]["gFrameDim"] = mFrameDim;
+
+    var["gScene"] = mpScene->getParameterBlock();
+    mpSampleGenerator->setShaderData(var);
+
+    mpTemporalResamplingPass->execute(pRenderContext, {mFrameDim, 1u});
+}
 
 // void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr&
 // pNoiseTexture)
