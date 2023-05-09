@@ -33,9 +33,9 @@ using namespace Falcor;
 
 namespace
 {
-const std::string kReflectTypesFile="RenderPasses/ReSTIRDIPass/ReflectTypes.cs.slang";
-const std::string kTracePassFile="RenderPasses/ReSTIRDIPass/PrepareReservoir.cs.slang";
-const std::string kSpatioResamplingFileName="RenderPasses/ReSTIRDIPass/FinalShading.cs.slang";
+const std::string kReflectTypesFile = "RenderPasses/ReSTIRDIPass/ReflectTypes.cs.slang";
+const std::string kTracePassFile = "RenderPasses/ReSTIRDIPass/PrepareReservoir.cs.slang";
+const std::string kSpatioResamplingFileName = "RenderPasses/ReSTIRDIPass/FinalShading.cs.slang";
 
 const std::string kShaderModel = "6_5";
 
@@ -43,12 +43,14 @@ const std::string kInputVBuffer = "vBuffer";
 const std::string kInputMotionVector = "motionVecW";
 const std::string kInputViewW = "viewW";
 const std::string kInputDepth = "depth";
+const std::string kInputNormal = "normal";
 
 const ChannelList kInputChannels = {
     {kInputVBuffer, "gVBuffer", "Visibility buffer"},
     {kInputMotionVector, "gMVec", "world-space motion vector", true, ResourceFormat::RG32Float},
     {kInputViewW, "gViewW", "World-Space view Direction", true},
     {kInputDepth, "gDepth", "Depth buffer (NDC)", true, ResourceFormat::R32Float},
+    {kInputNormal, "gNormal", "World Normal", false, ResourceFormat::RGBA32Float},
 };
 
 const Falcor::ChannelList kOutputChannels = {
@@ -281,6 +283,14 @@ void ReSTIRDIPass::prepareResources(RenderContext* pRenderContext, const RenderD
         FALCOR_ASSERT(mpParamsBlock);
     }
 
+    if (!mpPrevNormal)
+    {
+        mpPrevNormal = Texture::create2D(
+            mpDevice.get(), (uint32_t)mFrameDim.x, (uint32_t)mFrameDim.y, ResourceFormat::RGBA32Float, 1, 1, nullptr,
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
+        );
+    }
+
     {
         auto var = mpParamsBlock->getRootVar();
 
@@ -343,11 +353,12 @@ void ReSTIRDIPass::prepareReservoir(
     var["gDepth"] = depth;
     var["gViewW"] = viewW;
     var["gMotionVector"] = motionVector;
-
+    var["gNormal"] = renderData.getTexture(kInputNormal);
+    var["gPrevNormal"] = mpPrevNormal;
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = mFrameDim;
-    var["CB"]["isValidViewW"] = viewW==nullptr;
+    var["CB"]["isValidViewW"] = viewW == nullptr;
 
     FALCOR_ASSERT(mpParamsBlock);
     var["params"] = mpParamsBlock;
@@ -371,7 +382,6 @@ void ReSTIRDIPass::prepareReservoir(
     mpTracePass->execute(pRenderContext, {mFrameDim, 1u});
 }
 
-
 void ReSTIRDIPass::finalShading(
     RenderContext* pRenderContext,
     const RenderData& renderData,
@@ -380,7 +390,8 @@ void ReSTIRDIPass::finalShading(
     const Texture::SharedPtr& viewW
 )
 {
-    if(!mpSpatialResampling){
+    if (!mpSpatialResampling)
+    {
         Program::Desc desc;
         desc.addShaderModules(mpScene->getShaderModules());
         desc.addShaderLibrary(kSpatioResamplingFileName).setShaderModel(kShaderModel).csEntry("main");
@@ -391,24 +402,24 @@ void ReSTIRDIPass::finalShading(
         defines.add(getDefines());
         defines.add(getValidResourceDefines(kOutputChannels, renderData));
 
-        mpSpatialResampling=ComputePass::create(mpDevice, desc, defines, true);
+        mpSpatialResampling = ComputePass::create(mpDevice, desc, defines, true);
     }
     mpSpatialResampling->getProgram()->addDefines(getValidResourceDefines(kOutputChannels, renderData));
     mpSpatialResampling->getProgram()->addDefines(getDefines());
     auto var = mpSpatialResampling->getRootVar();
     FALCOR_ASSERT(mpIntermediateReservoir);
 
-    var["gIntermediateReservoir"]=mpIntermediateReservoir;
-    var["gVBuffer"]=vBuffer;
-    var["gDepth"]=depth;
+    var["gIntermediateReservoir"] = mpIntermediateReservoir;
+    var["gVBuffer"] = vBuffer;
+    var["gDepth"] = depth;
     var["gViewW"] = viewW;
+    var["gNormal"] = renderData.getTexture(kInputNormal);
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = mFrameDim;
-    var["CB"]["isValidViewW"] = viewW==nullptr;
+    var["CB"]["isValidViewW"] = viewW == nullptr;
 
-
-    var["gScene"]=mpScene->getParameterBlock();
+    var["gScene"] = mpScene->getParameterBlock();
 
     auto bind = [&](const ChannelDesc& channel)
     {
@@ -426,6 +437,7 @@ void ReSTIRDIPass::finalShading(
 void ReSTIRDIPass::endFrame(RenderContext* pRenderContext, const RenderData& renderData)
 {
     mpTemporalReservoir.swap(mpIntermediateReservoir);
+    mpPrevNormal = renderData.getTexture(kInputNormal);
     mFrameCount++;
 }
 

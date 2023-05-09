@@ -19,6 +19,7 @@ import RenderPasses.ReSTIRDIPass.LoadShadingData;
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float> gDepth;
 Texture2D<float4> gViewW;
+Texture2D<float4> gNormal;
 
 RWTexture2D<float4> gColor;
 RWTexture2D<float4> gDiffuseRadiance;
@@ -57,10 +58,45 @@ float3 getPrimaryRayDir(uint2 pixel, uint2 screen, const Camera camera)
 Reservoir spatialResampling(uint2 pixel, inout SampleGenerator sg)
 {
     uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
-    if (false)
+    const HitInfo hit = HitInfo(gVBuffer[pixel]);
+    const float3 primaryRayOrigin = gScene.camera.getPosition();
+    const float3 primaryRayDir = getPrimaryRayDir(pixel, gFrameDim, gScene.camera);
+
+    if (kUseSpatialResampling && hit.isValid())
     {
-        // TODO: Spatial Resampling
-        return Reservoir();
+        Reservoir r = Reservoir.unpack(gIntermediateReservoir[pixel1D]);
+        let lod = ExplicitLodTextureSampler(0.f);
+        ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
+        float3 N = gNormal[pixel].xyz;
+        [unroll]
+        for (uint i = 0; i < kSpatialNeighbors; i++)
+        {
+            float radius = kSampleRadius * sampleNext1D(sg);
+            float angle = M_2PI * sampleNext1D(sg);
+            uint2 neighbor = {
+                clamp(pixel.x + uint(radius * cos(angle)), 0, gFrameDim.x), clamp(pixel.y + uint(radius * sin(angle)), 0, gFrameDim.y)
+            };
+            Reservoir ri = Reservoir.unpack(gIntermediateReservoir[neighbor.x + gFrameDim.x * neighbor.y]);
+            float3 neighborN = gNormal[neighbor].xyz;
+            // let lodNeigbor = ExplicitLodTextureSampler(0.f);
+
+            // ShadingData sdNeighbor =
+            //     loadShadingData(hit, primaryRayOrigin, getPrimaryRayDir(neighbor, gFrameDim, gScene.camera), lodNeigbor);
+            // float3 neighborN = sdNeighbor.N;
+            //
+            if (dot(neighborN, N) > 0.9)
+            {
+                let mi = gScene.materials.getMaterialInstance(sd, lod);
+                float pi = length(mi.eval(sd, ri.s.dir, sg) * ri.s.Li);
+                r.merge(ri, pi, sampleNext1D(sg));
+                if (r.M > kSpatialMax)
+                {
+                    r.wSum *= float(kSpatialMax) / r.M;
+                    r.M = kSpatialMax;
+                }
+            }
+        }
+        return r;
     }
     else
     {

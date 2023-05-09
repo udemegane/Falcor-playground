@@ -100,6 +100,8 @@ private:
     Buffer::SharedPtr mpTemporalReservoir;
     Buffer::SharedPtr mpIntermediateReservoir;
 
+    Texture::SharedPtr mpPrevNormal;
+
     struct
     {
         uint mRISSampleNums = 8;

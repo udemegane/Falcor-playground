@@ -26,6 +26,8 @@ Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float> gDepth;
 Texture2D<float4> gViewW;
 Texture2D<float2> gMotionVector;
+Texture2D<float4> gNormal;
+Texture2D<float4> gPrevNormal;
 ParameterBlock<Params> params;
 
 cbuffer CB
@@ -264,9 +266,11 @@ void temporalResampling<S : ISampleGenerator>(const uint2 pixel, const float3 po
         prevPix = getPrevPixel(pos, gScene.camera);
     int prevFramePix1D = prevPix.x + (int)gFrameDim.x * prevPix.y;
 
-    if (true && prevPix.x >= 0 && prevPix.y >= 0 && prevPix.x < gFrameDim.x && prevPix.y < gFrameDim.y)
+    if (kUseTemporalResampling && prevPix.x >= 0 && prevPix.y >= 0 && prevPix.x < gFrameDim.x && prevPix.y < gFrameDim.y)
     {
-        bool filter = true;
+        float3 N = gNormal[pixel].xyz;
+        float3 prevN = gPrevNormal[prevPix].xyz;
+        bool filter = length(N - prevN) < 0.4;
         if (filter)
         {
             Reservoir prevR = Reservoir.unpack(gTemporalReservoir[prevFramePix1D]);
