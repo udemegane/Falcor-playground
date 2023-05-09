@@ -20,7 +20,7 @@ import Params;
 
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float> gDepth;
-Texture2D<float4> gNoise;
+// Texture2D<float4> gNoise;
 Texture2D<float2> gMotionVector;
 
 RWStructuredBuffer<PackedGIReservoir> gTemporalReservoirs;
@@ -33,7 +33,7 @@ cbuffer CB
 {
     uint gFrameCount;
     uint2 gFrameDim;
-    uint2 gNoiseTexDim;
+    // uint2 gNoiseTexDim;
     uint gRandUint;
 }
 

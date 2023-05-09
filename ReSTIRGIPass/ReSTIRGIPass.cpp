@@ -78,7 +78,7 @@ const Falcor::ChannelList kInputChannels = {
     {kInputDirectLighting, "gDirectLighting", "Radiance from Direct Lighting", true},
     {kInputDiffuseReflectance, kDiffuseReflectanceTexName, "Diffuse Reflectance on Visibility Points", true},
     {kInputSpecularReflectance, kSpecularReflectanceTexName, "Specular Reflectance on Visibility Points", true},
-    {kInputNoise, "gNoiseTex", "Noise Texture", true},
+    // {kInputNoise, "gNoiseTex", "Noise Texture", true},
 };
 
 const Falcor::ChannelList kOutputChannels = {
@@ -200,7 +200,9 @@ void ReSTIRGIPass::parseDictionary(const Dictionary& dict)
         else if (k == kSplitView)
         {
             mStaticParams.mSplitView = v;
-        }else if(k==kExcludeEnvMapEmissiveFromRIS){
+        }
+        else if (k == kExcludeEnvMapEmissiveFromRIS)
+        {
             mStaticParams.mExcludeEnvMapEmissiveFromRIS = v;
         }
     }
@@ -231,8 +233,7 @@ void ReSTIRGIPass::setScene(RenderContext* pRenderContext, const Scene::SharedPt
     mpSpatialResamplingPass = nullptr;
     mpFinalShadingPass = nullptr;
     if (mpScene)
-    {
-    }
+    {}
 }
 
 void ReSTIRGIPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
@@ -306,15 +307,15 @@ void ReSTIRGIPass::execute(RenderContext* pRenderContext, const RenderData& rend
     //    const auto& pNormal = renderData.getTexture(kInputNormal);
     const auto& pMVec = renderData.getTexture(kInputMotionVector);
     const auto& pDepth = renderData.getTexture(kInputDepth);
-    const auto& pNoise = renderData.getTexture(kInputNoise);
+    // const auto& pNoise = renderData.getTexture(kInputNoise);
     FALCOR_ASSERT(pNoise);
-    mNoiseDim = {pNoise.get()->getHeight(), pNoise.get()->getWidth()};
+    // mNoiseDim = {pNoise.get()->getHeight(), pNoise.get()->getWidth()};
 
     prepareResources(pRenderContext, renderData);
-    initialSampling(pRenderContext, renderData, pVBuffer, pDepth, pMVec, pNoise);
+    initialSampling(pRenderContext, renderData, pVBuffer, pDepth, pMVec);
     //    temporalResampling(pRenderContext, renderData, pMVec, pNoise);
     //    spatialResampling(pRenderContext, renderData, pNoise);
-    finalShading(pRenderContext, renderData, pVBuffer, pDepth, pNoise);
+    finalShading(pRenderContext, renderData, pVBuffer, pDepth);
     endFrame();
     // renderData holds the requested resources
 }
@@ -330,7 +331,7 @@ Program::DefineList ReSTIRGIPass::getStaticDefines(const RenderData& renderData)
     defines.add("USE_ANALYTIC_LIGHTS", mpScene->useAnalyticLights() ? "1" : "0");
     defines.add("USE_INFINITE_BOUNCES", mStaticParams.mUseInfiniteBounces ? "1" : "0");
     defines.add("MAX_BOUNCES", std::to_string(mStaticParams.mMaxBounces));
-    defines.add("EXCLUDE_ENV_AND_EMISSIVE_FROM_RIS", mStaticParams.mExcludeEnvMapEmissiveFromRIS?"1":"0");
+    defines.add("EXCLUDE_ENV_AND_EMISSIVE_FROM_RIS", mStaticParams.mExcludeEnvMapEmissiveFromRIS ? "1" : "0");
 
     defines.add("USE_TEMPORAL_RESAMPLING", mStaticParams.mTemporalResampling ? "1" : "0");
     defines.add("TEMPORAL_RESERVOIR_SIZE", std::to_string(mStaticParams.mTemporalReservoirSize));
@@ -347,7 +348,7 @@ Program::DefineList ReSTIRGIPass::getStaticDefines(const RenderData& renderData)
     const auto& diffuseReflectance = renderData.getTexture(kInputDiffuseReflectance);
     const auto& specularReflectance = renderData.getTexture(kInputSpecularReflectance);
     const auto& directLighting = renderData.getTexture(kInputDirectLighting);
-    const bool readyDirectLighting = (directLighting!= nullptr)&&(specularReflectance!=nullptr)&&(diffuseReflectance!=nullptr);
+    const bool readyDirectLighting = (directLighting != nullptr) && (specularReflectance != nullptr) && (diffuseReflectance != nullptr);
     defines.add("READY_REFLECTANCE", readyDirectLighting ? "1" : "0");
     if (mpEmissiveLightSampler)
         defines.add(mpEmissiveLightSampler->getDefines());
@@ -395,8 +396,8 @@ void ReSTIRGIPass::initialSampling(
     const RenderData& renderData,
     const Texture::SharedPtr& pVBuffer,
     const Texture::SharedPtr& pDepth,
-    const Texture::SharedPtr& pMotionVector,
-    const Texture::SharedPtr& pNoiseTexture
+    const Texture::SharedPtr& pMotionVector
+    // const Texture::SharedPtr& pNoiseTexture
 )
 {
     FALCOR_ASSERT(pVBuffer);
@@ -461,12 +462,12 @@ void ReSTIRGIPass::initialSampling(
 
     var["gVBuffer"] = pVBuffer;
     var["gDepth"] = pDepth;
-    var["gNoise"] = pNoiseTexture;
+    // var["gNoise"] = pNoiseTexture;
     var["gMotionVector"] = pMotionVector;
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = mFrameDim;
-    var["CB"]["gNoiseTexDim"] = mNoiseDim;
+    // var["CB"]["gNoiseTexDim"] = mNoiseDim;
     var["CB"]["gRandUint"] = mEngine();
 
     FALCOR_ASSERT(mpParamsBlock);
@@ -597,8 +598,7 @@ void ReSTIRGIPass::finalShading(
     RenderContext* pRenderContext,
     const RenderData& renderData,
     const Texture::SharedPtr& pVBuffer,
-    const Texture::SharedPtr& pDepth,
-    const Texture::SharedPtr& pNoiseTexture
+    const Texture::SharedPtr& pDepth
 )
 {
     if (!mpFinalShadingPass)
@@ -623,7 +623,7 @@ void ReSTIRGIPass::finalShading(
 
     //    var["gInitSamples"] = mpInitialSamples;
     var["gIntermediateReservoirs"] = mpIntermediateReservoirs;
-    var["gNoise"] = pNoiseTexture;
+    // var["gNoise"] = pNoiseTexture;
     var["gVBuffer"] = pVBuffer;
     var[kDiffuseReflectanceTexName] = renderData.getTexture(kInputDiffuseReflectance);
     var[kSpecularReflectanceTexName] = renderData.getTexture(kInputSpecularReflectance);
@@ -631,10 +631,8 @@ void ReSTIRGIPass::finalShading(
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = mFrameDim;
-    var["CB"]["gNoiseTexDim"] = mNoiseDim;
+    // var["CB"]["gNoiseTexDim"] = mNoiseDim;
     var["CB"]["gRandUint"] = mEngine();
-
-
 
     var["gScene"] = mpScene->getParameterBlock();
 
@@ -645,9 +643,6 @@ void ReSTIRGIPass::finalShading(
     };
     for (const auto& channel : kOutputChannels)
         bind(channel);
-
-
-
 
     mpSampleGenerator->setShaderData(var);
     //    if(mpEmissiveLightSampler)
@@ -676,7 +671,6 @@ void ReSTIRGIPass::renderUI(Gui::Widgets& widget)
         dirty |= widget.var("Max Bounces", mStaticParams.mMaxBounces, 0u, 30u);
     dirty |= widget.checkbox("Exclude EnvMap and Emissive mesh from RIS", mStaticParams.mExcludeEnvMapEmissiveFromRIS);
 
-
     if (Gui::Group temporalGroup = widget.group("Temporal Resampling", true))
     {
         dirty |= temporalGroup.checkbox("Use Temporal Resampling", mStaticParams.mTemporalResampling);
@@ -696,19 +690,19 @@ void ReSTIRGIPass::renderUI(Gui::Widgets& widget)
             dirty |= spatialGroup.checkbox("Do Visibility-test each Sample", mStaticParams.mDoVisibilityTestEachSamples);
         }
     }
-//    if (auto debugGroup = widget.group("Debug Property", true))
-//    {
-//        dirty |= debugGroup.checkbox("Debug Split View", mStaticParams.mSplitView);
-//        dirty |= debugGroup.checkbox("Eval Direct Lighting", mStaticParams.mEvalDirect);
-//        if (!mStaticParams.mEvalDirect)
-//        {
-//            dirty |= debugGroup.checkbox("Show Visibility point in-irradiance", mStaticParams.mShowVisibilityPointLi);
-//        }
-//        else
-//        {
-//            mStaticParams.mShowVisibilityPointLi = false;
-//        }
-//    }
+    //    if (auto debugGroup = widget.group("Debug Property", true))
+    //    {
+    //        dirty |= debugGroup.checkbox("Debug Split View", mStaticParams.mSplitView);
+    //        dirty |= debugGroup.checkbox("Eval Direct Lighting", mStaticParams.mEvalDirect);
+    //        if (!mStaticParams.mEvalDirect)
+    //        {
+    //            dirty |= debugGroup.checkbox("Show Visibility point in-irradiance", mStaticParams.mShowVisibilityPointLi);
+    //        }
+    //        else
+    //        {
+    //            mStaticParams.mShowVisibilityPointLi = false;
+    //        }
+    //    }
     if (dirty)
     {
         mOptionsChanged = true;

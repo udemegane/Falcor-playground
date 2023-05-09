@@ -71,8 +71,8 @@ private:
         const RenderData& renderData,
         const Texture::SharedPtr& pVBuffer,
         const Texture::SharedPtr& pDepth,
-        const Texture::SharedPtr& pMotionVector,
-        const Texture::SharedPtr& pNoiseTexture
+        const Texture::SharedPtr& pMotionVector
+        // const Texture::SharedPtr& pNoiseTexture
     );
 
     // Move temporal algorithm into initialSampling
@@ -89,8 +89,8 @@ private:
         RenderContext* pRenderContext,
         const RenderData& renderData,
         const Texture::SharedPtr& pVBuffer,
-        const Texture::SharedPtr& pDepth,
-        const Texture::SharedPtr& pNoiseTexture
+        const Texture::SharedPtr& pDepth
+        // const Texture::SharedPtr& pNoiseTexture
     );
     void endFrame();
 

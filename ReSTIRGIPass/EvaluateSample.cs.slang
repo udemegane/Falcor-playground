@@ -15,7 +15,7 @@ import StaticParams;
 import LoadShadingData;
 
 Texture2D<PackedHitInfo> gVBuffer;
-Texture2D<float4> gNoise;
+// Texture2D<float4> gNoise;
 Texture2D<float4> gDirectLighting;
 
 RWTexture2D<float4> gColor;
@@ -31,7 +31,7 @@ cbuffer CB
 {
     uint gFrameCount;
     uint2 gFrameDim;
-    uint2 gNoiseTexDim;
+    // uint2 gNoiseTexDim;
     uint gRandUint;
 }
 
