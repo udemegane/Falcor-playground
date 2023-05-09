@@ -57,6 +57,7 @@ const std::string kUseImportanceSampling = "useImportanceSampling";
 const std::string kUseInfiniteBounces = "useInfiniteBounces";
 const std::string kMaxBounce = "maxBounce";
 const std::string kExcludeEnvMapEmissiveFromRIS = "analyticOnly";
+const std::string kUseHarfResolutionGI = "harfResolution";
 
 const std::string kUseTemporalResampling = "useTemporalResampling";
 const std::string kTemporalReservoirSize = "temporalReservoirSize";
@@ -103,7 +104,7 @@ ReSTIRGIPass::ReSTIRGIPass(std::shared_ptr<Device> pDevice, const Dictionary& di
     mEngine.seed(seed_gen());
 
     parseDictionary(dict);
-    mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_TINY_UNIFORM);
+    mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_DEFAULT);
     if (!mpDevice->isFeatureSupported(Device::SupportedFeatures::RaytracingTier1_1))
         logError("Inline Raytracing is not supported on this device.");
 }
@@ -133,6 +134,7 @@ Dictionary ReSTIRGIPass::getScriptingDictionary()
     d[kShowVisibilityPointLi] = mStaticParams.mShowVisibilityPointLi;
     d[kSplitView] = mStaticParams.mSplitView;
     d[kExcludeEnvMapEmissiveFromRIS] = mStaticParams.mExcludeEnvMapEmissiveFromRIS;
+    d[kUseHarfResolutionGI] = mStaticParams.mUseHarfResolutionGI;
 
     return d;
 }
@@ -205,13 +207,11 @@ void ReSTIRGIPass::parseDictionary(const Dictionary& dict)
         {
             mStaticParams.mExcludeEnvMapEmissiveFromRIS = v;
         }
+        else if (k == kUseHarfResolutionGI)
+        {
+            mStaticParams.mUseHarfResolutionGI = v;
+        }
     }
-}
-
-void ReSTIRGIPass::compile(RenderContext* pRenderContext, const CompileData& compileData)
-{
-    RenderPass::compile(pRenderContext, compileData);
-    mFrameDim = compileData.defaultTexDims;
 }
 
 RenderPassReflection ReSTIRGIPass::reflect(const CompileData& compileData)
@@ -239,7 +239,13 @@ void ReSTIRGIPass::setScene(RenderContext* pRenderContext, const Scene::SharedPt
 
 void ReSTIRGIPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    mFrameDim = renderData.getDefaultTextureDims();
+    const auto& pVBuffer = renderData.getTexture(kInputVBuffer);
+    //    const auto& pNormal = renderData.getTexture(kInputNormal);
+    const auto& pMVec = renderData.getTexture(kInputMotionVector);
+
+    const auto& pDepth = renderData.getTexture(kInputDepth);
+    mFrameDim = uint2(pVBuffer->getWidth(), pVBuffer->getHeight());
+
     if (!mpScene)
     {
         clearRenderPassChannels(pRenderContext, kOutputChannels, renderData);
@@ -304,21 +310,12 @@ void ReSTIRGIPass::execute(RenderContext* pRenderContext, const RenderData& rend
         mpEmissiveLightSampler->update(pRenderContext);
     }
 
-    const auto& pVBuffer = renderData.getTexture(kInputVBuffer);
-    //    const auto& pNormal = renderData.getTexture(kInputNormal);
-    const auto& pMVec = renderData.getTexture(kInputMotionVector);
-    const auto& pDepth = renderData.getTexture(kInputDepth);
-    // const auto& pNoise = renderData.getTexture(kInputNoise);
-    FALCOR_ASSERT(pNoise);
-    // mNoiseDim = {pNoise.get()->getHeight(), pNoise.get()->getWidth()};
-
     prepareResources(pRenderContext, renderData);
     initialSampling(pRenderContext, renderData, pVBuffer, pDepth, pMVec);
-    //    temporalResampling(pRenderContext, renderData, pMVec, pNoise);
-    //    spatialResampling(pRenderContext, renderData, pNoise);
+    if (mStaticParams.mUseHarfResolutionGI)
+        temporalResamplingHarfRes(pRenderContext, renderData);
     finalShading(pRenderContext, renderData, pVBuffer, pDepth);
     endFrame();
-    // renderData holds the requested resources
 }
 
 Program::DefineList ReSTIRGIPass::getStaticDefines(const RenderData& renderData)
@@ -333,6 +330,7 @@ Program::DefineList ReSTIRGIPass::getStaticDefines(const RenderData& renderData)
     defines.add("USE_INFINITE_BOUNCES", mStaticParams.mUseInfiniteBounces ? "1" : "0");
     defines.add("MAX_BOUNCES", std::to_string(mStaticParams.mMaxBounces));
     defines.add("EXCLUDE_ENV_AND_EMISSIVE_FROM_RIS", mStaticParams.mExcludeEnvMapEmissiveFromRIS ? "1" : "0");
+    defines.add("USE_HARF_RESOLUTION", mStaticParams.mUseHarfResolutionGI ? "1" : "0");
 
     defines.add("USE_TEMPORAL_RESAMPLING", mStaticParams.mTemporalResampling ? "1" : "0");
     defines.add("TEMPORAL_RESERVOIR_SIZE", std::to_string(mStaticParams.mTemporalReservoirSize));
@@ -422,37 +420,34 @@ void ReSTIRGIPass::initialSampling(
 
     auto var = mpInitialSamplingPass->getRootVar();
 
-    if (!mpTemporalReservoirs)
+    if (!mpTemporalReservoirs || mGIResolutionChanged)
     {
-        uint32_t reservoirCounts = mFrameDim.x * mFrameDim.y;
+        uint32_t reservoirCounts = mStaticParams.mUseHarfResolutionGI ? (mFrameDim.x / 2u) * (mFrameDim.y / 2u) : mFrameDim.x * mFrameDim.y;
         mpTemporalReservoirs = Buffer::createStructured(
             mpDevice.get(), var["gTemporalReservoirs"], reservoirCounts,
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
         );
     }
 
-    if (!mpIntermediateReservoirs)
+    if (!mpIntermediateReservoirs || mGIResolutionChanged)
     {
-        uint32_t reservoirCounts = mFrameDim.x * mFrameDim.y;
+        uint32_t reservoirCounts = mStaticParams.mUseHarfResolutionGI ? (mFrameDim.x / 2u) * (mFrameDim.y / 2u) : mFrameDim.x * mFrameDim.y;
+
         mpIntermediateReservoirs = Buffer::createStructured(
             mpDevice.get(), var["gIntermediateReservoirs"], reservoirCounts,
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
         );
     }
 
-    //    var["gInitSamples"] = mpInitialSamples;
     var["gTemporalReservoirs"] = mpTemporalReservoirs;
-    //    var["gPrevFrameReservoirs"] = mpSpatialReservoirs;
     var["gIntermediateReservoirs"] = mpIntermediateReservoirs;
 
     var["gVBuffer"] = pVBuffer;
     var["gDepth"] = pDepth;
-    // var["gNoise"] = pNoiseTexture;
     var["gMotionVector"] = pMotionVector;
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = mFrameDim;
-    // var["CB"]["gNoiseTexDim"] = mNoiseDim;
     var["CB"]["gRandUint"] = mEngine();
 
     FALCOR_ASSERT(mpParamsBlock);
@@ -478,9 +473,8 @@ void ReSTIRGIPass::initialSampling(
     mpInitialSamplingPass->execute(pRenderContext, {mFrameDim, 1u});
 }
 
-void ReSTIRGIPass::temporalResampling(RenderContext* pRenderContext, const RenderData& renderData)
+void ReSTIRGIPass::temporalResamplingHarfRes(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    FALCOR_ASSERT(pMotionVector);
     if (!mpTemporalResamplingPass)
     {
         Program::Desc desc;
@@ -491,32 +485,42 @@ void ReSTIRGIPass::temporalResampling(RenderContext* pRenderContext, const Rende
         auto defines = mpScene->getSceneDefines();
         defines.add(mpSampleGenerator->getDefines());
         defines.add(getStaticDefines(renderData));
+
         mpTemporalResamplingPass = ComputePass::create(mpDevice, desc, defines, true);
     }
-    FALCOR_ASSERT(mpTemporalResamplingPass);
     mpTemporalResamplingPass->getProgram()->addDefines(getStaticDefines(renderData));
     auto var = mpTemporalResamplingPass->getRootVar();
 
     if (!mpIntermediateReservoirs)
     {
-        uint32_t reservoirCounts = mFrameDim.x * mFrameDim.y;
+        uint32_t reservoirCounts = (mFrameDim.x / 2u) * (mFrameDim.y / 2u);
         mpIntermediateReservoirs = Buffer::createStructured(
             mpDevice.get(), var["gIntermediateReservoirs"], reservoirCounts,
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
         );
     }
-
+    if (!mpSpatialReservoirs)
+    {
+        uint32_t reservoirCounts = (mFrameDim.x / 2u) * (mFrameDim.y / 2u);
+        mpSpatialReservoirs = Buffer::createStructured(
+            mpDevice.get(), var["gSpatialReservoirs"], reservoirCounts,
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+        );
+    }
     var["gTemporalReservoirs"] = mpTemporalReservoirs;
     var["gIntermediateReservoirs"] = mpIntermediateReservoirs;
+    var["gSpatialReservoirs"] = mpSpatialReservoirs;
+    // var["gVBuffer"] = renderData.getTexture(kInputVBuffer);
     var["gMotionVector"] = renderData.getTexture(kInputMotionVector);
-
+    uint2 harfRes = uint2(mFrameDim.x / 2u, mFrameDim.y / 2u);
     var["CB"]["gFrameCount"] = mFrameCount;
-    var["CB"]["gFrameDim"] = mFrameDim;
+    var["CB"]["gHarfFrameDim"] = harfRes;
+    var["CB"]["gRandUint"] = mEngine();
 
     var["gScene"] = mpScene->getParameterBlock();
     mpSampleGenerator->setShaderData(var);
 
-    mpTemporalResamplingPass->execute(pRenderContext, {mFrameDim, 1u});
+    mpTemporalResamplingPass->execute(pRenderContext, {harfRes, 1u});
 }
 
 // void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr&
@@ -602,7 +606,8 @@ void ReSTIRGIPass::finalShading(
     FALCOR_ASSERT(mpSpatialReservoirs);
 
     //    var["gInitSamples"] = mpInitialSamples;
-    var["gIntermediateReservoirs"] = mpIntermediateReservoirs;
+
+    var["gIntermediateReservoirs"] = mStaticParams.mUseHarfResolutionGI ? mpSpatialReservoirs : mpIntermediateReservoirs;
     // var["gNoise"] = pNoiseTexture;
     var["gVBuffer"] = pVBuffer;
     var[kDiffuseReflectanceTexName] = renderData.getTexture(kInputDiffuseReflectance);
@@ -636,14 +641,19 @@ void ReSTIRGIPass::finalShading(
 
 void ReSTIRGIPass::endFrame()
 {
-    mpTemporalReservoirs.swap(mpIntermediateReservoirs);
+    if (mStaticParams.mUseHarfResolutionGI)
+        mpTemporalReservoirs.swap(mpSpatialReservoirs);
+    else
+        mpTemporalReservoirs.swap(mpIntermediateReservoirs);
+    mGIResolutionChanged = false;
     mFrameCount++;
 }
 
 void ReSTIRGIPass::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
-    dirty |= widget.checkbox("Enable ReSTIR", mStaticParams.mEnableReSTIR);
+    mGIResolutionChanged = widget.checkbox("Use Harf Resolution (WIP)", mStaticParams.mUseHarfResolutionGI);
+    dirty |= mGIResolutionChanged;
     dirty |= widget.var("Secondary Ray Probability", mStaticParams.mSecondaryRayLaunchProbability, 0.f, 1.f);
     dirty |= widget.var("Russian Roulette Probability", mStaticParams.mRussianRouletteProbability, 0.f, 1.f);
     dirty |= widget.checkbox("Use Infinite Bounces", mStaticParams.mUseInfiniteBounces);
@@ -667,22 +677,9 @@ void ReSTIRGIPass::renderUI(Gui::Widgets& widget)
             dirty |= spatialGroup.var("Neighbors Count", mStaticParams.mSpatialNeighborsCount, 1u, 50u);
             dirty |= spatialGroup.var("Sample Radius", mStaticParams.mSampleRadius, 1u, 500u);
             dirty |= spatialGroup.var("Reservoir Size", mStaticParams.mSpatialReservoirSize, 1u, 500u);
-            dirty |= spatialGroup.checkbox("Do Visibility-test each Sample", mStaticParams.mDoVisibilityTestEachSamples);
         }
     }
-    //    if (auto debugGroup = widget.group("Debug Property", true))
-    //    {
-    //        dirty |= debugGroup.checkbox("Debug Split View", mStaticParams.mSplitView);
-    //        dirty |= debugGroup.checkbox("Eval Direct Lighting", mStaticParams.mEvalDirect);
-    //        if (!mStaticParams.mEvalDirect)
-    //        {
-    //            dirty |= debugGroup.checkbox("Show Visibility point in-irradiance", mStaticParams.mShowVisibilityPointLi);
-    //        }
-    //        else
-    //        {
-    //            mStaticParams.mShowVisibilityPointLi = false;
-    //        }
-    //    }
+
     if (dirty)
     {
         mOptionsChanged = true;

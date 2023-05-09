@@ -31,17 +31,17 @@ cbuffer CB
 {
     uint gFrameCount;
     uint2 gFrameDim;
-    // uint2 gNoiseTexDim;
     uint gRandUint;
 }
 
 GIReservoir spatialResampling<S : ISampleGenerator>(uint2 pixel, inout S sg)
 {
-    uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
+    uint pixel1D = kUseHarfResolutionGI ? (pixel.x / 2u) + (gFrameDim.x / 2u) * (pixel.y / 2u) : pixel.x + gFrameDim.x * pixel.y;
 
     if (kUseSpatialResampling)
     {
-        GIReservoir master = GIReservoir.unpack(gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y]);
+        GIReservoir master = GIReservoir.unpack(gIntermediateReservoirs[pixel1D]);
+        master.updated = false;
         const GISample s = master.s;
 
         const float3 origin = computeRayOrigin(s.xv, s.nv);
@@ -54,7 +54,7 @@ GIReservoir spatialResampling<S : ISampleGenerator>(uint2 pixel, inout S sg)
             uint2 neighbor = {
                 clamp(pixel.x + uint(radius * cos(angle)), 0, gFrameDim.x), clamp(pixel.y + uint(radius * sin(angle)), 0, gFrameDim.y)
             };
-            GIReservoir rn = GIReservoir.unpack(gIntermediateReservoirs[neighbor.x + gFrameDim.x * neighbor.y]);
+            GIReservoir rn = GIReservoir.unpack(gIntermediateReservoirs[(neighbor.x / 2u) + (gFrameDim.x / 2u) * (neighbor.y / 2u)]);
 
             // angle test
             if (dot(rn.s.nv, s.nv) >= 0.9 && length(rn.s.xv - s.xv) < 5.0f)
@@ -87,9 +87,8 @@ GIReservoir spatialResampling<S : ISampleGenerator>(uint2 pixel, inout S sg)
                 }
                 else
                 {
-                    // bool accept = updateReservoir(master, rn.s, rn.wSum * invJ * weight, u);
                     bool accept = updateReservoir(master, rn.s, luminance(rn.s.Lo) * weight, u);
-                    // bool accept = mergeReservoirs(master, rn, luminance(rn.s.Lo) * invJ, u);
+                    // bool accept = mergeReservoirs(master, rn, luminance(rn.s.Lo) * weight, u);
                     if (accept)
                         setVisibilityPoint(master, s);
                     // else
@@ -151,7 +150,8 @@ float3 finalShading<S : ISampleGenerator>(uint2 pixel, GIReservoir res, inout S 
 
             float3 wo = normalize(res.s.xs - res.s.xv);
 
-            // res.s.weight = (mi.eval(sd, wo, sg) + HLF_EPSILON) / (mi.evalPdf(sd, wo, kUseImportanceSampling) + HLF_EPSILON);
+            // res.s.weight = (mi.eval(sd, wo, sg) * dot(sd.N, wo) + HLF_EPSILON) / (mi.evalPdf(sd, wo, kUseImportanceSampling) +
+            // HLF_EPSILON);
 
             color *= res.s.weight;
             if (kReadyReflectanceData)
@@ -184,7 +184,8 @@ float3 finalShading<S : ISampleGenerator>(uint2 pixel, GIReservoir res, inout S 
             if (true)
             {
                 // color += gDirectLighting[pixel].xyz;
-                gEnvColor[pixel] = float4(color, 1.0f);
+
+                gEnvColor[pixel] = float4(gScene.envMap.eval(primaryRayDir), 1.0f);
                 float3 diffuseRadiance = color / gDiffuseReflectance[pixel].xyz;
                 gDiffuseRadiance[pixel] = float4(diffuseRadiance, res.s.sceneLength);
                 float3 specularRadiance = color / max(0.01f, gSpecularReflectance[pixel].xyz);

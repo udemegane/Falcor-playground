@@ -51,7 +51,6 @@ public:
 
     virtual Dictionary getScriptingDictionary() override;
     virtual RenderPassReflection reflect(const CompileData& compileData) override;
-    virtual void compile(RenderContext* pRenderContext, const CompileData& compileData) override;
     virtual void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     virtual void renderUI(Gui::Widgets& widget) override;
     virtual void setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene) override;
@@ -72,20 +71,18 @@ private:
         const Texture::SharedPtr& pVBuffer,
         const Texture::SharedPtr& pDepth,
         const Texture::SharedPtr& pMotionVector
-        // const Texture::SharedPtr& pNoiseTexture
     );
 
-    // Move temporal algorithm into initialSampling
-    void temporalResampling(RenderContext* pRenderContext, const RenderData& renderData);
+    void temporalResamplingHarfRes(RenderContext* pRenderContext, const RenderData& renderData);
 
     // Move spatial algorithm into FinalShading
     //    void spatialResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr& pNoiseTexture);
+
     void finalShading(
         RenderContext* pRenderContext,
         const RenderData& renderData,
         const Texture::SharedPtr& pVBuffer,
         const Texture::SharedPtr& pDepth
-        // const Texture::SharedPtr& pNoiseTexture
     );
     void endFrame();
 
@@ -111,7 +108,6 @@ private:
     std::mt19937 mEngine;
 
     bool mVarsChanged = true;
-    bool mOptionChanged = false;
     struct
     {
         //
@@ -126,13 +122,14 @@ private:
         bool mUseEmissiveLights = true;
         bool mUseAnalyticsLights = true;
         bool mEnableReSTIR = false;
+        bool mUseHarfResolutionGI = false;
 
         // Temporal Resampling Settings
         bool mTemporalResampling = true;
         uint mTemporalReservoirSize = 20;
 
         // Spatial Resampling Settings
-        bool mSpatialResampling = false;
+        bool mSpatialResampling = true;
         uint mSpatialNeighborsCount = 4;
         uint mSampleRadius = 100;
         uint mSpatialReservoirSize = 100;
@@ -149,4 +146,5 @@ private:
     uint2 mNoiseDim = uint2(0, 0);
     uint mFrameCount = 0;
     bool mOptionsChanged = false;
+    bool mGIResolutionChanged = false;
 };

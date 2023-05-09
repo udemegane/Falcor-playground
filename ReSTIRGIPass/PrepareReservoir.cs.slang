@@ -523,7 +523,11 @@ bool generateInitialSample(
     // When fail to make ray, retrun Null Sample;
     // Only BSDF Sampling is correct yet.
     if (!prepareInitialSampleRay(InitialSamplePDFType::BSDF, sd, isCurveHit, mi, rayData, invPdf))
+    {
+        sample.xv = sd.posW;
+        sample.nv = max(sd.N, sd.faceN);
         return false; // GISample();
+    }
 
     // Launch ray.
     Ray ray = Ray(rayData.origin, rayData.direction, 0.f, kRayMax);
@@ -601,7 +605,7 @@ bool generateInitialSample(
     \param[in] s
 */
 
-void temporalResampling<S : ISampleGenerator>(const uint2 pixel, const float3 pos, const GISample s, const bool isSkipping, inout S sg)
+void temporalResampling<S : ISampleGenerator>(const uint2 pixel, const float3 pos, const GISample s, inout S sg)
 {
     float u = sampleNext1D(sg);
 
@@ -660,47 +664,50 @@ void sampling(uint2 pixel, uint2 screen, uint3 groupThreadId)
         let mi = gScene.materials.getMaterialInstance(sd, lod);
         // evalDirectLighting(sd, mi, test.sg);
         // generateLightSample(sd, mi.getLobeTypes(sd), ls, sg);
-        if (false)
-        {
-            // Reference PathTracer
-            ScatterRayData rayData = ScatterRayData(sg);
-            float invPdf;
-            prepareScatterRay(sd, mi, computeRayOrigin(sd.posW, max(sd.N, sd.faceN)), rayData, invPdf);
-            pathTrace(rayData);
-            GISample sample = GISample();
-            sample.Lo = rayData.radiance;
-            GIReservoir r = GIReservoir();
-            r.s = sample;
-            gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y] = r.pack();
-        }
-        else
+
+        // if (false)
+        // {
+        //     // Reference PathTracer
+        //     ScatterRayData rayData = ScatterRayData(sg);
+        //     float invPdf;
+        //     prepareScatterRay(sd, mi, computeRayOrigin(sd.posW, max(sd.N, sd.faceN)), rayData, invPdf);
+        //     pathTrace(rayData);
+        //     GISample sample = GISample();
+        //     sample.Lo = rayData.radiance;
+        //     GIReservoir r = GIReservoir();
+        //     r.s = sample;
+        //     gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y] = r.pack();
+        // }
+        // else
         {
             // Generate sample
             ScatterRayData rayData = ScatterRayData(sg);
 
             GISample sample = GISample();
-            bool isSkipping = (gFrameCount + pixel.x + pixel.y) % 2 == 0;
-            uint batchId = gFrameCount % 4;
-            bool mod2x = pixel.x % 2 == 1u;
-            bool mod2y = pixel.y % 2 == 1u;
-            bool calculationFlag = (batchId == 0 && 0 == mod2x && 0 == mod2y) || (batchId == 1 && 1 == mod2x && 0 == mod2y) ||
-                                   (batchId == 2 && 0 == mod2x && 1 == mod2y) || (batchId == 3 && 1 == mod2x && 1 == mod2y);
-
-            if (calculationFlag)
+            if (kUseHarfResolutionGI)
             {
+                uint batchId = gFrameCount % 4;
+                bool mod2x = (pixel.x % 2) == 1u;
+                bool mod2y = (pixel.y % 2) == 1u;
+                bool calculationFlag =
+                    (batchId == 0 && false == mod2x && false == mod2y) || (batchId == 1 && true == mod2x && false == mod2y) ||
+                    (batchId == 2 && false == mod2x && true == mod2y) || (batchId == 3 && true == mod2x && true == mod2y);
+
+                if (calculationFlag)
+                {
+                    bool isValid = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, rayData, sample);
+                    GIReservoir r = GIReservoir();
+                    updateReservoir(r, sample, luminance(sample.Lo) * sample.invPdf, 0.f);
+                    gIntermediateReservoirs[(pixel.x / 2u) + (gFrameDim.x / 2u) * (pixel.y / 2u)] = r.pack();
+                }
             }
+            else
+            {
+                bool isValid = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, rayData, sample);
 
-            bool isValid = generateInitialSample(sd, mi, hit.getType() == HitType::Curve, rayData, sample);
-            GIReservoir r = GIReservoir();
-            updateReservoir(r, sample, luminance(sample.Lo) * sample.invPdf, 0.f);
-            gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y] = r.pack();
-            return;
-
-            // r[(groupThreadId.x / 2u) + 8 * (groupThreadId.y / 2u)] = sample;
-            // GroupMemoryBarrierWithGroupSync();
-            // sample = r[(groupThreadId.x / 2u) + 8 * (groupThreadId.y / 2u)];
-            // Temporal Resampling
-            // temporalResampling(pixel, computeRayOrigin(sd.posW, -sd.faceN), sample, isSkipping, sg);
+                // Temporal Resampling Full Resolution
+                temporalResampling(pixel, computeRayOrigin(sd.posW, -sd.faceN), sample, sg);
+            }
         }
     }
     else
@@ -710,13 +717,15 @@ void sampling(uint2 pixel, uint2 screen, uint3 groupThreadId)
         s.sceneLength = HLF_MAX;
         s.weight = 0.f;
         GIReservoir r = GIReservoir();
-        updateReservoir(r, s, luminance(s.Lo), 0.0f);
-        gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y] = r.pack();
-        // color += float3(0.0f, 0.0, 0.f);
+
+        // hijack for temporal resampling
+        r.updated = kUseHarfResolutionGI;
+
+        updateReservoir(r, s, 0.0f, 0.0f);
+        uint pixel1D = kUseHarfResolutionGI ? (pixel.x / 2u) + (gFrameDim.x / 2u) * (pixel.y / 2u) : pixel.x + gFrameDim.x * pixel.y;
+        gIntermediateReservoirs[pixel1D] = r.pack();
     }
 }
-
-// groupshared bool rr[256];
 
 [numthreads(16, 16, 1)]
 void main(uint3 groupId: SV_GroupID, uint3 groupThreadId: SV_GroupThreadID, uint3 dispatchThreadId: SV_DispatchThreadID)

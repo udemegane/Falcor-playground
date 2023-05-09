@@ -1,6 +1,7 @@
 static const float kRayMax = 1e30f;
 static const bool kReadyReflectanceData = READY_REFLECTANCE;
 static const bool kUseAnalyticOnlyOnReSTIR = EXCLUDE_ENV_AND_EMISSIVE_FROM_RIS;
+static const bool kUseHarfResolutionGI = USE_HARF_RESOLUTION;
 
 // Initial Sampling
 static const float prr = P_RR;

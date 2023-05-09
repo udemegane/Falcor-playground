@@ -10,21 +10,24 @@ import GIReservoir;
 import StaticParams;
 
 Texture2D<float4> gMotionVector;
+Texture2D<PackedHitInfo> gVBuffer;
 
 RWStructuredBuffer<PackedGIReservoir> gTemporalReservoirs;
 RWStructuredBuffer<PackedGIReservoir> gIntermediateReservoirs;
+RWStructuredBuffer<PackedGIReservoir> gSpatialReservoirs;
 
 cbuffer CB
 {
     uint gFrameCount;
-    uint2 gFrameDim;
+    uint2 gHarfFrameDim;
+    uint gRandUint;
 }
 
 int2 getPrevPixel(float3 pos, Camera camera)
 {
     float4 prevClip = mul(camera.data.prevViewProjMatNoJitter, float4(pos, 1.0));
     float2 prevUV = float2(((prevClip.x) / (prevClip.w)) * 0.5 + 0.5, ((-prevClip.y) / (prevClip.w)) * 0.5 + 0.5);
-    int2 prevPix = int2(prevUV.x * (float)gFrameDim.x, prevUV.y * (float)gFrameDim.y);
+    int2 prevPix = int2(prevUV.x * (float)gHarfFrameDim.x, prevUV.y * (float)gHarfFrameDim.y);
     return prevPix;
 }
 
@@ -33,14 +36,13 @@ void temporalResampling<S : ISampleGenerator>(const uint2 pixel, const float3 po
     float u = sampleNext1D(sg);
 
     int2 prevPix = getPrevPixel(pos, gScene.camera);
-    // int2 prevPixelPos = prevPix; // + int2(gFrameDim * gMotionVector[pixel].xy);
-    // int2 prevPix = (int2)pixel + int2(gFrameDim * gMotionVector[pixel].xy);
-    int prevFramePix1D = prevPix.x + (int)gFrameDim.x * prevPix.y;
+    // int2 prevPixelPos = prevPix; // + int2(gHarfFrameDim * gMotionVector[pixel].xy);
+    // int2 prevPix = (int2)pixel + int2(gHarfFrameDim * gMotionVector[pixel].xy);
+    int prevFramePix1D = prevPix.x + (int)gHarfFrameDim.x * prevPix.y;
     GIReservoir currentReservoir = GIReservoir();
-
     updateReservoir(currentReservoir, s, luminance(s.Lo) * s.invPdf, 0.0f);
 
-    if (kUseTemporalResampling && prevPix.x >= 0 && prevPix.y >= 0 && prevPix.x < gFrameDim.x && prevPix.y < gFrameDim.y)
+    if (kUseTemporalResampling && prevPix.x >= 0 && prevPix.y >= 0 && prevPix.x < gHarfFrameDim.x && prevPix.y < gHarfFrameDim.y)
     {
         GIReservoir res = GIReservoir.unpack(gTemporalReservoirs[prevFramePix1D]);
 
@@ -59,17 +61,20 @@ void temporalResampling<S : ISampleGenerator>(const uint2 pixel, const float3 po
             }
         }
     }
-
-    gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y] = currentReservoir.pack();
+    currentReservoir.updated = false;
+    gSpatialReservoirs[pixel.x + gHarfFrameDim.x * pixel.y] = currentReservoir.pack();
 }
 
 [numthreads(16, 16, 1)]
 void main(uint3 groupId: SV_GroupID, uint3 groupThreadId: SV_GroupThreadID, uint3 dispatchThreadId: SV_DispatchThreadID)
 {
     uint2 pixel = dispatchThreadId.xy;
-    if (any(pixel >= gFrameDim))
+    if (any(pixel >= gHarfFrameDim))
         return;
-    GIReservoir r = GIReservoir.unpack(gIntermediateReservoirs[pixel.x + gFrameDim.x * pixel.y]);
-    SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
-    temporalResampling(pixel, computeRayOrigin(r.s.xv, r.s.nv), r.s, sg);
+    GIReservoir r = GIReservoir.unpack(gIntermediateReservoirs[pixel.x + gHarfFrameDim.x * pixel.y]);
+    SampleGenerator sg = SampleGenerator(pixel, gRandUint);
+    if (!r.updated)
+        temporalResampling(pixel, computeRayOrigin(r.s.xv, r.s.nv), r.s, sg);
+    else
+        gIntermediateReservoirs[pixel.x + gHarfFrameDim.x * pixel.y] = r.pack();
 }
