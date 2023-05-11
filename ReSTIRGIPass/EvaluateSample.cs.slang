@@ -1,3 +1,7 @@
+/***************************************************************************
+ # Copyright (c) 2023, udemegane All rights reserved.
+ **************************************************************************/
+
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 

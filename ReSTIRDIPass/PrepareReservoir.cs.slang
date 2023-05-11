@@ -1,3 +1,7 @@
+/***************************************************************************
+ # Copyright (c) 2023, udemegane All rights reserved.
+ **************************************************************************/
+
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 import Scene.Scene;
@@ -266,7 +270,7 @@ void temporalResampling<S : ISampleGenerator>(const uint2 pixel, const float3 po
         prevPix = getPrevPixel(pos, gScene.camera);
     int prevFramePix1D = prevPix.x + (int)gFrameDim.x * prevPix.y;
 
-    if (kUseTemporalResampling && prevPix.x >= 0 && prevPix.y >= 0 && prevPix.x < gFrameDim.x && prevPix.y < gFrameDim.y)
+    if (kUseReSTIR && kUseTemporalResampling && prevPix.x >= 0 && prevPix.y >= 0 && prevPix.x < gFrameDim.x && prevPix.y < gFrameDim.y)
     {
         float3 N = gNormal[pixel].xyz;
         float3 prevN = gPrevNormal[prevPix].xyz;

@@ -1,8 +1,11 @@
-
+/***************************************************************************
+ # Copyright (c) 2023, udemegane All rights reserved.
+ **************************************************************************/
 
 static const bool kUseEnvLight = USE_ENVLIGHT;
 static const bool kUseEmissiveLights = USE_EMISSIVE_LIGHTS;
 static const bool kUseAnalyticLights = USE_ANALYTIC_LIGHTS;
+static const bool kUseReSTIR = USE_RESTIR;
 
 static const bool kUseTemporalResampling = true;
 static const bool kUseSpatialResampling = false;

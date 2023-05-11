@@ -1,3 +1,7 @@
+/***************************************************************************
+ # Copyright (c) 2023, udemegane All rights reserved.
+ **************************************************************************/
+
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
@@ -10,11 +14,9 @@ import Rendering.Materials.IsotropicGGX;
 import Utils.Sampling.SampleGenerator;
 import Rendering.Lights.LightHelpers;
 import RenderPasses.ReSTIRDIPass.RaytracingUtils;
-import Reservoir;
+import RenderPasses.ReSTIRDIPass.Reservoir;
 import RenderPasses.ReSTIRDIPass.StaticParams;
 import RenderPasses.ReSTIRDIPass.LoadShadingData;
-
-// #define is_valid(name) (is_valid_##name != 0)
 
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float> gDepth;
@@ -55,18 +57,15 @@ float3 getPrimaryRayDir(uint2 pixel, uint2 screen, const Camera camera)
     }
 }
 
-Reservoir spatialResampling(uint2 pixel, inout SampleGenerator sg)
+Reservoir spatialResampling<S : ISampleGenerator>(uint2 pixel, const ShadingData sd, bool isValidHit, inout S sg)
 {
     uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
-    const HitInfo hit = HitInfo(gVBuffer[pixel]);
-    const float3 primaryRayOrigin = gScene.camera.getPosition();
-    const float3 primaryRayDir = getPrimaryRayDir(pixel, gFrameDim, gScene.camera);
 
-    if (kUseSpatialResampling && hit.isValid())
+    if (kUseReSTIR && kUseSpatialResampling && isValidHit)
     {
         Reservoir r = Reservoir.unpack(gIntermediateReservoir[pixel1D]);
         let lod = ExplicitLodTextureSampler(0.f);
-        ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
+        // ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
         float3 N = gNormal[pixel].xyz;
         [unroll]
         for (uint i = 0; i < kSpatialNeighbors; i++)
@@ -78,12 +77,6 @@ Reservoir spatialResampling(uint2 pixel, inout SampleGenerator sg)
             };
             Reservoir ri = Reservoir.unpack(gIntermediateReservoir[neighbor.x + gFrameDim.x * neighbor.y]);
             float3 neighborN = gNormal[neighbor].xyz;
-            // let lodNeigbor = ExplicitLodTextureSampler(0.f);
-
-            // ShadingData sdNeighbor =
-            //     loadShadingData(hit, primaryRayOrigin, getPrimaryRayDir(neighbor, gFrameDim, gScene.camera), lodNeigbor);
-            // float3 neighborN = sdNeighbor.N;
-            //
             if (dot(neighborN, N) > 0.9)
             {
                 let mi = gScene.materials.getMaterialInstance(sd, lod);
@@ -115,17 +108,17 @@ float3 recalculateLighting<S : ISampleGenerator>(const Sample s, const ShadingDa
     return mi.eval(sd, s.dir, sg) * s.Li;
 }
 
-float3 finalShading<S : ISampleGenerator>(uint2 pixel, Reservoir res, inout S sg)
+float3 finalShading<S : ISampleGenerator>(uint2 pixel, Reservoir res, const ShadingData sd, bool isValidHit, inout S sg)
 {
     uint pixel1D = pixel.x + gFrameDim.x * pixel.y;
-    const HitInfo hit = HitInfo(gVBuffer[pixel]);
-    const float3 primaryRayOrigin = gScene.camera.getPosition();
-    const float3 primaryRayDir = getPrimaryRayDir(pixel, gFrameDim, gScene.camera);
+    // const HitInfo hit = HitInfo(gVBuffer[pixel]);
+    // const float3 primaryRayOrigin = gScene.camera.getPosition();
+    // const float3 primaryRayDir = getPrimaryRayDir(pixel, gFrameDim, gScene.camera);
     float3 color = float3(0.f);
-    if (hit.isValid())
+    if (isValidHit)
     {
         let lod = ExplicitLodTextureSampler(0.f);
-        ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
+        // ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
         let mi = gScene.materials.getMaterialInstance(sd, lod);
         color = recalculateLighting(res.s, sd, mi, sg) * res.getInvPDF() + mi.getProperties(sd).emission;
         demodulate(pixel, sd, mi, color);
@@ -162,7 +155,13 @@ void main(uint3 groupId: SV_GroupID, uint3 groupThreadId: SV_GroupThreadID, uint
     uint2 pixel = dispatchThreadId.xy;
     if (any(pixel >= gFrameDim))
         return;
+    const HitInfo hit = HitInfo(gVBuffer[pixel]);
+    const bool isValidHit = hit.isValid();
+    let lod = ExplicitLodTextureSampler(0.f);
+    const float3 primaryRayOrigin = gScene.camera.getPosition();
+    const float3 primaryRayDir = getPrimaryRayDir(pixel, gFrameDim, gScene.camera);
+    ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod);
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
-    float3 color = finalShading(pixel, spatialResampling(pixel, sg), sg);
+    float3 color = finalShading(pixel, spatialResampling(pixel, sd, isValidHit, sg), sd, isValidHit, sg);
     gColor[pixel] = float4(color, 1.0f);
 }

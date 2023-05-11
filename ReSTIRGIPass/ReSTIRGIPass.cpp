@@ -1,29 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2015-23, NVIDIA CORPORATION. All rights reserved.
- #
- # Redistribution and use in source and binary forms, with or without
- # modification, are permitted provided that the following conditions
- # are met:
- #  * Redistributions of source code must retain the above copyright
- #    notice, this list of conditions and the following disclaimer.
- #  * Redistributions in binary form must reproduce the above copyright
- #    notice, this list of conditions and the following disclaimer in the
- #    documentation and/or other materials provided with the distribution.
- #  * Neither the name of NVIDIA CORPORATION nor the names of its
- #    contributors may be used to endorse or promote products derived
- #    from this software without specific prior written permission.
- #
- # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS "AS IS" AND ANY
- # EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- # PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- # CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- # EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- # PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- # PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
- # OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ # Copyright (c) 2023, udemegane All rights reserved.
  **************************************************************************/
 #include "ReSTIRGIPass.h"
 #include "RenderGraph/RenderPassHelpers.h"
@@ -57,7 +33,7 @@ const std::string kUseImportanceSampling = "useImportanceSampling";
 const std::string kUseInfiniteBounces = "useInfiniteBounces";
 const std::string kMaxBounce = "maxBounce";
 const std::string kExcludeEnvMapEmissiveFromRIS = "analyticOnly";
-const std::string kUseHarfResolutionGI = "harfResolution";
+const std::string kUseHalfResolutionGI = "halfResolution";
 
 const std::string kUseTemporalResampling = "useTemporalResampling";
 const std::string kTemporalReservoirSize = "temporalReservoirSize";
@@ -134,7 +110,7 @@ Dictionary ReSTIRGIPass::getScriptingDictionary()
     d[kShowVisibilityPointLi] = mStaticParams.mShowVisibilityPointLi;
     d[kSplitView] = mStaticParams.mSplitView;
     d[kExcludeEnvMapEmissiveFromRIS] = mStaticParams.mExcludeEnvMapEmissiveFromRIS;
-    d[kUseHarfResolutionGI] = mStaticParams.mUseHarfResolutionGI;
+    d[kUseHalfResolutionGI] = mStaticParams.mUseHalfResolutionGI;
 
     return d;
 }
@@ -207,9 +183,9 @@ void ReSTIRGIPass::parseDictionary(const Dictionary& dict)
         {
             mStaticParams.mExcludeEnvMapEmissiveFromRIS = v;
         }
-        else if (k == kUseHarfResolutionGI)
+        else if (k == kUseHalfResolutionGI)
         {
-            mStaticParams.mUseHarfResolutionGI = v;
+            mStaticParams.mUseHalfResolutionGI = v;
         }
     }
 }
@@ -312,8 +288,8 @@ void ReSTIRGIPass::execute(RenderContext* pRenderContext, const RenderData& rend
 
     prepareResources(pRenderContext, renderData);
     initialSampling(pRenderContext, renderData, pVBuffer, pDepth, pMVec);
-    if (mStaticParams.mUseHarfResolutionGI)
-        temporalResamplingHarfRes(pRenderContext, renderData);
+    if (mStaticParams.mUseHalfResolutionGI)
+        temporalResamplingHalfRes(pRenderContext, renderData);
     finalShading(pRenderContext, renderData, pVBuffer, pDepth);
     endFrame();
 }
@@ -330,7 +306,7 @@ Program::DefineList ReSTIRGIPass::getStaticDefines(const RenderData& renderData)
     defines.add("USE_INFINITE_BOUNCES", mStaticParams.mUseInfiniteBounces ? "1" : "0");
     defines.add("MAX_BOUNCES", std::to_string(mStaticParams.mMaxBounces));
     defines.add("EXCLUDE_ENV_AND_EMISSIVE_FROM_RIS", mStaticParams.mExcludeEnvMapEmissiveFromRIS ? "1" : "0");
-    defines.add("USE_HARF_RESOLUTION", mStaticParams.mUseHarfResolutionGI ? "1" : "0");
+    defines.add("USE_HARF_RESOLUTION", mStaticParams.mUseHalfResolutionGI ? "1" : "0");
 
     defines.add("USE_TEMPORAL_RESAMPLING", mStaticParams.mTemporalResampling ? "1" : "0");
     defines.add("TEMPORAL_RESERVOIR_SIZE", std::to_string(mStaticParams.mTemporalReservoirSize));
@@ -396,7 +372,6 @@ void ReSTIRGIPass::initialSampling(
     const Texture::SharedPtr& pVBuffer,
     const Texture::SharedPtr& pDepth,
     const Texture::SharedPtr& pMotionVector
-    // const Texture::SharedPtr& pNoiseTexture
 )
 {
     FALCOR_ASSERT(pVBuffer);
@@ -422,7 +397,7 @@ void ReSTIRGIPass::initialSampling(
 
     if (!mpTemporalReservoirs || mGIResolutionChanged)
     {
-        uint32_t reservoirCounts = mStaticParams.mUseHarfResolutionGI ? (mFrameDim.x / 2u) * (mFrameDim.y / 2u) : mFrameDim.x * mFrameDim.y;
+        uint32_t reservoirCounts = mStaticParams.mUseHalfResolutionGI ? (mFrameDim.x / 2u) * (mFrameDim.y / 2u) : mFrameDim.x * mFrameDim.y;
         mpTemporalReservoirs = Buffer::createStructured(
             mpDevice.get(), var["gTemporalReservoirs"], reservoirCounts,
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
@@ -431,7 +406,7 @@ void ReSTIRGIPass::initialSampling(
 
     if (!mpIntermediateReservoirs || mGIResolutionChanged)
     {
-        uint32_t reservoirCounts = mStaticParams.mUseHarfResolutionGI ? (mFrameDim.x / 2u) * (mFrameDim.y / 2u) : mFrameDim.x * mFrameDim.y;
+        uint32_t reservoirCounts = mStaticParams.mUseHalfResolutionGI ? (mFrameDim.x / 2u) * (mFrameDim.y / 2u) : mFrameDim.x * mFrameDim.y;
 
         mpIntermediateReservoirs = Buffer::createStructured(
             mpDevice.get(), var["gIntermediateReservoirs"], reservoirCounts,
@@ -473,7 +448,7 @@ void ReSTIRGIPass::initialSampling(
     mpInitialSamplingPass->execute(pRenderContext, {mFrameDim, 1u});
 }
 
-void ReSTIRGIPass::temporalResamplingHarfRes(RenderContext* pRenderContext, const RenderData& renderData)
+void ReSTIRGIPass::temporalResamplingHalfRes(RenderContext* pRenderContext, const RenderData& renderData)
 {
     if (!mpTemporalResamplingPass)
     {
@@ -523,7 +498,7 @@ void ReSTIRGIPass::temporalResamplingHarfRes(RenderContext* pRenderContext, cons
     mpTemporalResamplingPass->execute(pRenderContext, {harfRes, 1u});
 }
 
-// void ReSTIRGIPass::spatialResampling(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr&
+// void ReSTIRGIPass::spatialResamplingHalfRes(RenderContext* pRenderContext, const RenderData& renderData, const Texture::SharedPtr&
 // pNoiseTexture)
 //{
 //     //    FALCOR_ASSERT();
@@ -607,7 +582,7 @@ void ReSTIRGIPass::finalShading(
 
     //    var["gInitSamples"] = mpInitialSamples;
 
-    var["gIntermediateReservoirs"] = mStaticParams.mUseHarfResolutionGI ? mpSpatialReservoirs : mpIntermediateReservoirs;
+    var["gIntermediateReservoirs"] = mStaticParams.mUseHalfResolutionGI ? mpSpatialReservoirs : mpIntermediateReservoirs;
     // var["gNoise"] = pNoiseTexture;
     var["gVBuffer"] = pVBuffer;
     var[kDiffuseReflectanceTexName] = renderData.getTexture(kInputDiffuseReflectance);
@@ -641,7 +616,7 @@ void ReSTIRGIPass::finalShading(
 
 void ReSTIRGIPass::endFrame()
 {
-    if (mStaticParams.mUseHarfResolutionGI)
+    if (mStaticParams.mUseHalfResolutionGI)
         mpTemporalReservoirs.swap(mpSpatialReservoirs);
     else
         mpTemporalReservoirs.swap(mpIntermediateReservoirs);
@@ -652,11 +627,11 @@ void ReSTIRGIPass::endFrame()
 void ReSTIRGIPass::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
-    mGIResolutionChanged = widget.checkbox("Use Harf Resolution (WIP)", mStaticParams.mUseHarfResolutionGI);
+    mGIResolutionChanged = widget.checkbox("Use Harf Resolution (WIP)", mStaticParams.mUseHalfResolutionGI);
     dirty |= mGIResolutionChanged;
     dirty |= widget.var("Secondary Ray Probability", mStaticParams.mSecondaryRayLaunchProbability, 0.f, 1.f);
     dirty |= widget.var("Russian Roulette Probability", mStaticParams.mRussianRouletteProbability, 0.f, 1.f);
-    dirty |= widget.checkbox("Use Infinite Bounces", mStaticParams.mUseInfiniteBounces);
+    dirty |= widget.checkbox("Use Multi Bounces", mStaticParams.mUseInfiniteBounces);
     if (mStaticParams.mUseInfiniteBounces)
         dirty |= widget.var("Max Bounces", mStaticParams.mMaxBounces, 0u, 30u);
     dirty |= widget.checkbox("Exclude EnvMap and Emissive mesh from RIS", mStaticParams.mExcludeEnvMapEmissiveFromRIS);

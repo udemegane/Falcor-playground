@@ -1,3 +1,7 @@
+/***************************************************************************
+ # Copyright (c) 2023, udemegane All rights reserved.
+ **************************************************************************/
+
 #include "Utils/Math/MathConstants.slangh"
 import Utils.Math.PackedFormats;
 import Utils.Color.ColorHelpers;
